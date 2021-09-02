@@ -196,7 +196,7 @@ func ParseIncomingTransferField(receiverData string) (thischainaddr sdk.AccAddre
 	}
 	sep2 := strings.Split(sep1[0], "|")
 	if len(sep2) != 2 {
-		err = fmt.Errorf("formatting incorect, need: '{address}|{portid}/{channelid}:{address}', got: '%s'", receiverData)
+		err = fmt.Errorf("formatting incorect, need: '{address_on_this_chain}|{portid}/{channelid}:{final_dest_address}', got: '%s'", receiverData)
 		return
 	}
 	thischainaddr, err = sdk.AccAddressFromBech32(sep2[0])
@@ -215,23 +215,16 @@ func (k Keeper) ForwardTransferPacket(ctx sdk.Context, receiver sdk.AccAddress, 
 	feeCoins := sdk.Coins{sdk.NewCoin(token.Denom, feeAmount)}
 	packetCoin := sdk.NewCoin(token.Denom, packetAmount)
 
-	// TODO: how to dynamic/what should these values be?
-	timeoutHeight := clienttypes.GetSelfHeight(ctx)
-	timeoutHeight.RevisionHeight = timeoutHeight.RevisionHeight + 1000
-
-	// TODO: this is hardcoded to handle the relayer demo we have built
-	timeoutHeight.RevisionNumber = 2
-	timeoutTime := time.Now().Add(1 * time.Hour).UnixNano()
-
 	// pay fees
 	if feeAmount.IsPositive() {
+		// TODO: maybe community pool
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, receiver, authtypes.FeeCollectorName, feeCoins); err != nil {
 			return sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
 		}
 	}
 
 	// send tokens to destination
-	if err := k.SendTransfer(ctx, port, channel, packetCoin, receiver, finalDest, timeoutHeight, uint64(timeoutTime)); err != nil {
+	if err := k.SendTransfer(ctx, port, channel, packetCoin, receiver, finalDest, clienttypes.Height{0, 0}, uint64(ctx.BlockTime().Add(30*time.Minute).UnixNano())); err != nil {
 		return sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
 	}
 
@@ -342,6 +335,13 @@ func (k Keeper) OnRecvPacket(ctx sdk.Context, packet channeltypes.Packet, data t
 	}
 
 	// sender chain is the source, mint vouchers
+
+	// In middleware case,
+	// split out reciever address into parts
+	// allow processing from standard ics20 module
+	// // app.OnRecievePacket()
+	// // our custom logic
+	// after this happens then we create our packet and pay fees
 
 	// since SendPacket did not prefix the denomination, we must prefix denomination here
 	sourcePrefix := types.GetDenomPrefix(packet.GetDestPort(), packet.GetDestChannel())
