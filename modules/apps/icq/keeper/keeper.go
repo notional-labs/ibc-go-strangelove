@@ -79,8 +79,3 @@ func (k Keeper) AuthenticateCapability(ctx sdk.Context, cap *capabilitytypes.Cap
 func (k Keeper) ClaimCapability(ctx sdk.Context, cap *capabilitytypes.Capability, name string) error {
 	return k.scopedKeeper.ClaimCapability(ctx, cap, name)
 }
-
-// GetAppVersion calls the ICS4Wrapper GetAppVersion function.
-func (k Keeper) GetAppVersion(ctx sdk.Context, portID, channelID string) (string, bool) {
-	return k.ics4Wrapper.GetAppVersion(ctx, portID, channelID)
-}
