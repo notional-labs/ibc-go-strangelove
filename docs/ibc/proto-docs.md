@@ -1459,12 +1459,10 @@ Msg defines the ICS29 Msg service.
 
 ### Params
 Params defines the set of on-chain interchain query parameters.
-The following parameters may be used to disable the host submodule.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| `controller_enabled` | [bool](#bool) |  | controller_enabled indicates whether the controller submodules are enabled. |
 | `host_enabled` | [bool](#bool) |  | host_enabled enables or disables the host submodule. |
 | `allow_queries` | [string](#string) | repeated | allow_queries defines a list of query paths allowed to be queried on a host chain. |
 
