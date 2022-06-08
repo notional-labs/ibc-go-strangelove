@@ -1527,7 +1527,7 @@ InterchainQueryPacketAck is comprised of an ABCI query response with non-determi
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| `response` | [tendermint.abci.ResponseQuery](#tendermint.abci.ResponseQuery) |  |  |
+| `responses` | [tendermint.abci.ResponseQuery](#tendermint.abci.ResponseQuery) | repeated |  |
 
 
 
@@ -1542,7 +1542,7 @@ InterchainQueryPacketData is comprised of an ABCI query request and type of quer
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| `request` | [tendermint.abci.RequestQuery](#tendermint.abci.RequestQuery) |  |  |
+| `requests` | [tendermint.abci.RequestQuery](#tendermint.abci.RequestQuery) | repeated |  |
 
 
 
