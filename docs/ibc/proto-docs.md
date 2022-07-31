@@ -87,6 +87,8 @@
     - [GenesisState](#ibc.applications.icq.v1.GenesisState)
   
 - [ibc/applications/icq/v1/packet.proto](#ibc/applications/icq/v1/packet.proto)
+    - [CosmosQuery](#ibc.applications.icq.v1.CosmosQuery)
+    - [CosmosResponse](#ibc.applications.icq.v1.CosmosResponse)
     - [InterchainQueryPacketAck](#ibc.applications.icq.v1.InterchainQueryPacketAck)
     - [InterchainQueryPacketData](#ibc.applications.icq.v1.InterchainQueryPacketData)
   
@@ -1519,10 +1521,25 @@ GenesisState defines the interchain query genesis state
 
 
 
-<a name="ibc.applications.icq.v1.InterchainQueryPacketAck"></a>
+<a name="ibc.applications.icq.v1.CosmosQuery"></a>
 
-### InterchainQueryPacketAck
-InterchainQueryPacketAck is comprised of an ABCI query response with non-deterministic fields left empty (e.g. Codespace, Log, Info and ...).
+### CosmosQuery
+CosmosQuery contains a list of tendermint ABCI query requests. It should be used when sending queries to an SDK host chain.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| `requests` | [tendermint.abci.RequestQuery](#tendermint.abci.RequestQuery) | repeated |  |
+
+
+
+
+
+
+<a name="ibc.applications.icq.v1.CosmosResponse"></a>
+
+### CosmosResponse
+CosmosResponse contains a list of tendermint ABCI query responses. It should be used when receiving responses from an SDK host chain.
 
 
 | Field | Type | Label | Description |
@@ -1534,15 +1551,30 @@ InterchainQueryPacketAck is comprised of an ABCI query response with non-determi
 
 
 
-<a name="ibc.applications.icq.v1.InterchainQueryPacketData"></a>
+<a name="ibc.applications.icq.v1.InterchainQueryPacketAck"></a>
 
-### InterchainQueryPacketData
-InterchainQueryPacketData is comprised of an ABCI query request and type of query.
+### InterchainQueryPacketAck
+InterchainQueryPacketAck is comprised of an ABCI query response with non-deterministic fields left empty (e.g. Codespace, Log, Info and ...).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| `requests` | [tendermint.abci.RequestQuery](#tendermint.abci.RequestQuery) | repeated |  |
+| `data` | [bytes](#bytes) |  |  |
+
+
+
+
+
+
+<a name="ibc.applications.icq.v1.InterchainQueryPacketData"></a>
+
+### InterchainQueryPacketData
+InterchainQueryPacketData is comprised of raw query.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| `data` | [bytes](#bytes) |  |  |
 
 
 
