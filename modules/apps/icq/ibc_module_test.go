@@ -373,8 +373,10 @@ func (suite *InterchainQueriesTestSuite) TestOnRecvPacket() {
 				},
 			}
 
+			bz, err := types.SerializeCosmosQuery(requests)
+			suite.Require().NoError(err)
 			icqPacketData := types.InterchainQueryPacketData{
-				Requests: requests,
+				Data: bz,
 			}
 			packetData = icqPacketData.GetBytes()
 
@@ -390,10 +392,13 @@ func (suite *InterchainQueriesTestSuite) TestOnRecvPacket() {
 					Height: resp.Height,
 				}
 			}
+			bz, err = types.SerializeCosmosResponse(resps)
+			suite.Require().NoError(err)
 
-			expectedTxResponse, err := types.ModuleCdc.MarshalJSON(&types.InterchainQueryPacketAck{
-				Responses: resps,
-			})
+			icqack := types.InterchainQueryPacketAck{
+				Data: bz,
+			}
+			expectedTxResponse, err := types.ModuleCdc.MarshalJSON(&icqack)
 			suite.Require().NoError(err)
 
 			expectedAck := channeltypes.NewResultAcknowledgement(expectedTxResponse)
