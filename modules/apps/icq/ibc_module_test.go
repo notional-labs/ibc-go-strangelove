@@ -293,7 +293,6 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenAck() {
 }
 
 func (suite *InterchainQueriesTestSuite) TestOnAcknowledgementPacket() {
-
 	testCases := []struct {
 		name     string
 		malleate func()
@@ -347,7 +346,6 @@ func (suite *InterchainQueriesTestSuite) TestOnAcknowledgementPacket() {
 }
 
 func (suite *InterchainQueriesTestSuite) TestOnTimeoutPacket() {
-
 	testCases := []struct {
 		name     string
 		malleate func()
