@@ -58,6 +58,8 @@ The Inter-Blockchain Communication protocol (IBC) allows blockchains to talk to 
 
     2.2 [ICS 27 Interchain Accounts](https://github.com/cosmos/ibc-go/tree/main/modules/apps/27-interchain-accounts)
 
+    2.3 [ICS ## Interchain Queries](https://github.com/cosmos/ibc-go/tree/main/modules/apps/icq)
+
 3. **Light Clients**
 
     3.1 [ICS 07 Tendermint](https://github.com/cosmos/ibc-go/tree/main/modules/light-clients/07-tendermint)
