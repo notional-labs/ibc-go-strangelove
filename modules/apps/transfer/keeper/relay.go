@@ -59,69 +59,18 @@ func (k Keeper) SendTransfer(
 	receiver string,
 	timeoutHeight clienttypes.Height,
 	timeoutTimestamp uint64,
-) error {
-	_, err := k.SendTransferWithResult(ctx, sourcePort, sourceChannel, token, sender, receiver, timeoutHeight, timeoutTimestamp)
-	return err
-}
-
-// SendTransferWithResult handles transfer sending logic and returns the result packet.
-//
-// There are 2 possible cases:
-//
-// 1. Sender chain is acting as the source zone. The coins are transferred
-// to an escrow address (i.e locked) on the sender chain and then transferred
-// to the receiving chain through IBC TAO logic. It is expected that the
-// receiving chain will mint vouchers to the receiving address.
-//
-// 2. Sender chain is acting as the sink zone. The coins (vouchers) are burned
-// on the sender chain and then transferred to the receiving chain though IBC
-// TAO logic. It is expected that the receiving chain, which had previously
-// sent the original denomination, will unescrow the fungible token and send
-// it to the receiving address.
-//
-// Another way of thinking of source and sink zones is through the token's
-// timeline. Each send to any chain other than the one it was previously
-// received from is a movement forwards in the token's timeline. This causes
-// trace to be added to the token's history and the destination port and
-// destination channel to be prefixed to the denomination. In these instances
-// the sender chain is acting as the source zone. When the token is sent back
-// to the chain it previously received from, the prefix is removed. This is
-// a backwards movement in the token's timeline and the sender chain
-// is acting as the sink zone.
-//
-// Example:
-// These steps of transfer occur: A -> B -> C -> A -> C -> B -> A
-//
-// 1. A -> B : sender chain is source zone. Denom upon receiving: 'B/denom'
-// 2. B -> C : sender chain is source zone. Denom upon receiving: 'C/B/denom'
-// 3. C -> A : sender chain is source zone. Denom upon receiving: 'A/C/B/denom'
-// 4. A -> C : sender chain is sink zone. Denom upon receiving: 'C/B/denom'
-// 5. C -> B : sender chain is sink zone. Denom upon receiving: 'B/denom'
-// 6. B -> A : sender chain is sink zone. Denom upon receiving: 'denom'
-//
-// Note: An IBC Transfer must be initiated using a MsgTransfer via the Transfer rpc handler
-func (k Keeper) SendTransferWithResult(
-	ctx sdk.Context,
-	sourcePort,
-	sourceChannel string,
-	token sdk.Coin,
-	sender sdk.AccAddress,
-	receiver string,
-	timeoutHeight clienttypes.Height,
-	timeoutTimestamp uint64,
-) (channeltypes.Packet, error) {
-	var zero channeltypes.Packet
+) (uint64, error) {
 	if !k.GetSendEnabled(ctx) {
-		return zero, types.ErrSendDisabled
+		return 0, types.ErrSendDisabled
 	}
 
 	if k.bankKeeper.BlockedAddr(sender) {
-		return zero, sdkerrors.Wrapf(sdkerrors.ErrUnauthorized, "%s is not allowed to send funds", sender)
+		return 0, sdkerrors.Wrapf(sdkerrors.ErrUnauthorized, "%s is not allowed to send funds", sender)
 	}
 
 	sourceChannelEnd, found := k.channelKeeper.GetChannel(ctx, sourcePort, sourceChannel)
 	if !found {
-		return zero, sdkerrors.Wrapf(channeltypes.ErrChannelNotFound, "port ID (%s) channel ID (%s)", sourcePort, sourceChannel)
+		return 0, sdkerrors.Wrapf(channeltypes.ErrChannelNotFound, "port ID (%s) channel ID (%s)", sourcePort, sourceChannel)
 	}
 
 	destinationPort := sourceChannelEnd.GetCounterparty().GetPortID()
@@ -130,7 +79,7 @@ func (k Keeper) SendTransferWithResult(
 	// get the next sequence
 	sequence, found := k.channelKeeper.GetNextSequenceSend(ctx, sourcePort, sourceChannel)
 	if !found {
-		return zero, sdkerrors.Wrapf(
+		return 0, sdkerrors.Wrapf(
 			channeltypes.ErrSequenceSendNotFound,
 			"source port: %s, source channel: %s", sourcePort, sourceChannel,
 		)
@@ -140,7 +89,7 @@ func (k Keeper) SendTransferWithResult(
 	// See spec for this logic: https://github.com/cosmos/ibc/tree/master/spec/app/ics-020-fungible-token-transfer#packet-relay
 	channelCap, ok := k.scopedKeeper.GetCapability(ctx, host.ChannelCapabilityPath(sourcePort, sourceChannel))
 	if !ok {
-		return zero, sdkerrors.Wrap(channeltypes.ErrChannelCapabilityNotFound, "module does not own channel capability")
+		return 0, sdkerrors.Wrap(channeltypes.ErrChannelCapabilityNotFound, "module does not own channel capability")
 	}
 
 	// NOTE: denomination and hex hash correctness checked during msg.ValidateBasic
@@ -153,7 +102,7 @@ func (k Keeper) SendTransferWithResult(
 	if strings.HasPrefix(token.Denom, "ibc/") {
 		fullDenomPath, err = k.DenomPathFromHash(ctx, token.Denom)
 		if err != nil {
-			return zero, err
+			return 0, err
 		}
 	}
 
@@ -176,7 +125,7 @@ func (k Keeper) SendTransferWithResult(
 		if err := k.bankKeeper.SendCoins(
 			ctx, sender, escrowAddress, sdk.NewCoins(token),
 		); err != nil {
-			return zero, err
+			return 0, err
 		}
 
 	} else {
@@ -186,7 +135,7 @@ func (k Keeper) SendTransferWithResult(
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(
 			ctx, sender, types.ModuleName, sdk.NewCoins(token),
 		); err != nil {
-			return zero, err
+			return 0, err
 		}
 
 		if err := k.bankKeeper.BurnCoins(
@@ -215,7 +164,7 @@ func (k Keeper) SendTransferWithResult(
 	)
 
 	if err := k.ics4Wrapper.SendPacket(ctx, channelCap, packet); err != nil {
-		return zero, err
+		return 0, err
 	}
 
 	defer func() {
@@ -234,7 +183,7 @@ func (k Keeper) SendTransferWithResult(
 		)
 	}()
 
-	return packet, nil
+	return sequence, nil
 }
 
 // OnRecvPacket processes a cross chain fungible token transfer. If the
