@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
 )
+
+// TODO possibly move this constant to somewhere that makes more sense
+const localhostID = "localhost"
 
 // SendPacket is called by a module in order to send an IBC packet on a channel
 // end owned by the calling module to the corresponding module on the counterparty
@@ -176,21 +180,6 @@ func (k Keeper) RecvPacket(
 		)
 	}
 
-	// Connection must be OPEN to receive a packet. It is possible for connection to not yet be open if packet was
-	// sent optimistically before connection and channel handshake completed. However, to receive a packet,
-	// connection and channel must both be open
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-	if !found {
-		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-	}
-
-	if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-		return sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidConnectionState,
-			"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-		)
-	}
-
 	// check if packet timeouted by comparing it with the latest height of the chain
 	selfHeight := clienttypes.GetSelfHeight(ctx)
 	timeoutHeight := packet.GetTimeoutHeight()
@@ -211,13 +200,47 @@ func (k Keeper) RecvPacket(
 
 	commitment := types.CommitPacket(k.cdc, packet)
 
-	// verify that the counterparty did commit to sending this packet
-	if err := k.connectionKeeper.VerifyPacketCommitment(
-		ctx, connectionEnd, proofHeight, proof,
-		packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence(),
-		commitment,
-	); err != nil {
-		return sdkerrors.Wrap(err, "couldn't verify counterparty packet commitment")
+	// check if the packet commitment verification should be handled on the localhost
+	// TODO need to check if localhost connections are enabled for this chain
+	if channel.ConnectionHops[0] == localhostID {
+		// get the desired state directly from this chain's channelKeeper
+		storedCommitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+		// check that the packet commitment actually exists in this chain's channelKeeper store
+		if len(storedCommitment) == 0 {
+			return fmt.Errorf("couldn't verify localhost packet commitment, commitment does not exist")
+		}
+		if !bytes.Equal(storedCommitment, commitment) {
+			return fmt.Errorf("couldn't verify localhost packet commitment (%s ≠ %s)", storedCommitment, commitment)
+		}
+
+	} else {
+		// GetConnection call takes place in this else block because it will fail on localhost connections
+		// due to the connection not actually existing in state.
+
+		// Connection must be OPEN to receive a packet. It is possible for connection to not yet be open if packet was
+		// sent optimistically before connection and channel handshake completed. However, to receive a packet,
+		// connection and channel must both be open
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
+		if !found {
+			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
+		}
+
+		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
+			return sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidConnectionState,
+				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+			)
+		}
+
+		// verify that the counterparty did commit to sending this packet
+		if err := k.connectionKeeper.VerifyPacketCommitment(
+			ctx, connectionEnd, proofHeight, proof,
+			packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence(),
+			commitment,
+		); err != nil {
+			return sdkerrors.Wrap(err, "couldn't verify counterparty packet commitment")
+		}
 	}
 
 	switch channel.Ordering {
