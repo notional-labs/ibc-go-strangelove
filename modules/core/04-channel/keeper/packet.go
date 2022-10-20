@@ -440,41 +440,73 @@ func (k Keeper) AcknowledgePacket(
 		)
 	}
 
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-	if !found {
-		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
+	var commitment, packetCommitment []byte
+
+	// check if the packet acknowledgement verification should be handled on the localhost
+	// TODO need to check if localhost connections are enabled for this chain
+	if channel.ConnectionHops[0] == localhostID {
+		commitment = k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+		if len(commitment) == 0 {
+			EmitAcknowledgePacketEvent(ctx, packet, channel)
+			// This error indicates that the acknowledgement has already been relayed
+			// or there is a misconfigured relayer attempting to prove an acknowledgement
+			// for a packet never sent. Core IBC will treat this error as a no-op in order to
+			// prevent an entire relay transaction from failing and consuming unnecessary fees.
+			return types.ErrNoOpMsg
+		}
+
+		packetCommitment = types.CommitPacket(k.cdc, packet)
+
+		// get the desired state directly from this chain's channelKeeper
+		storedAck, ok := k.GetPacketAcknowledgement(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+		// check that the packet acknowledgement actually exists in this chain's channelKeeper store
+		if !ok {
+			return fmt.Errorf("couldn't verify localhost acknowledgement, acknowledgement does not exist")
+		}
+		if !bytes.Equal(acknowledgement, storedAck) {
+			return fmt.Errorf("couldn't verify localhost acknowledgement (%s ≠ %s)", storedAck, acknowledgement)
+		}
+	} else {
+		// GetConnection call takes place in this else block because it will fail on localhost connections
+		// due to the connection not actually existing in state.
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
+		if !found {
+			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
+		}
+
+		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
+			return sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidConnectionState,
+				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+			)
+		}
+
+		commitment = k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+		if len(commitment) == 0 {
+			EmitAcknowledgePacketEvent(ctx, packet, channel)
+			// This error indicates that the acknowledgement has already been relayed
+			// or there is a misconfigured relayer attempting to prove an acknowledgement
+			// for a packet never sent. Core IBC will treat this error as a no-op in order to
+			// prevent an entire relay transaction from failing and consuming unnecessary fees.
+			return types.ErrNoOpMsg
+		}
+
+		packetCommitment = types.CommitPacket(k.cdc, packet)
+
+		if err := k.connectionKeeper.VerifyPacketAcknowledgement(
+			ctx, connectionEnd, proofHeight, proof, packet.GetDestPort(), packet.GetDestChannel(),
+			packet.GetSequence(), acknowledgement,
+		); err != nil {
+			return err
+		}
 	}
-
-	if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-		return sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidConnectionState,
-			"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-		)
-	}
-
-	commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-	if len(commitment) == 0 {
-		EmitAcknowledgePacketEvent(ctx, packet, channel)
-		// This error indicates that the acknowledgement has already been relayed
-		// or there is a misconfigured relayer attempting to prove an acknowledgement
-		// for a packet never sent. Core IBC will treat this error as a no-op in order to
-		// prevent an entire relay transaction from failing and consuming unnecessary fees.
-		return types.ErrNoOpMsg
-	}
-
-	packetCommitment := types.CommitPacket(k.cdc, packet)
 
 	// verify we sent the packet and haven't cleared it out yet
 	if !bytes.Equal(commitment, packetCommitment) {
 		return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
-	}
-
-	if err := k.connectionKeeper.VerifyPacketAcknowledgement(
-		ctx, connectionEnd, proofHeight, proof, packet.GetDestPort(), packet.GetDestChannel(),
-		packet.GetSequence(), acknowledgement,
-	); err != nil {
-		return err
 	}
 
 	// assert packets acknowledged in order
