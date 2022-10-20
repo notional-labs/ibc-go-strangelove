@@ -7,7 +7,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
-
 	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
 	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/types"
 	porttypes "github.com/cosmos/ibc-go/v5/modules/core/05-port/types"
@@ -117,50 +116,67 @@ func (k Keeper) ChanOpenTry(
 		return "", nil, sdkerrors.Wrapf(porttypes.ErrInvalidPort, "caller does not own port capability for port ID %s", portID)
 	}
 
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
-	if !found {
-		return "", nil, sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionHops[0])
-	}
+	// check if the channel state verification should be handled on the localhost
+	// TODO need to check if localhost connections are enabled for this chain
+	if connectionHops[0] == localhostID {
+		// get the counterparty channel directly from this chain's channelKeeper store
+		storedChannel, ok := k.GetChannel(ctx, counterparty.PortId, counterparty.ChannelId)
 
-	if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-		return "", nil, sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidConnectionState,
-			"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in INIT state
+		if !ok {
+			return "", nil, fmt.Errorf("failed localhost channel state verification, counterparty channel does not exist")
+		}
+		if storedChannel.State != types.INIT {
+			return "", nil, fmt.Errorf("failed localhost channel state verification, channel state is not INIT (got %s)", storedChannel.State)
+		}
+	} else {
+		// GetConnection call takes place in this else block because it will fail on localhost connections
+		// due to the connection not actually existing in state.
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
+		if !found {
+			return "", nil, sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionHops[0])
+		}
+
+		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
+			return "", nil, sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidConnectionState,
+				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+			)
+		}
+
+		getVersions := connectionEnd.GetVersions()
+		if len(getVersions) != 1 {
+			return "", nil, sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidVersion,
+				"single version must be negotiated on connection before opening channel, got: %v",
+				getVersions,
+			)
+		}
+
+		if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
+			return "", nil, sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidVersion,
+				"connection version %s does not support channel ordering: %s",
+				getVersions[0], order.String(),
+			)
+		}
+
+		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
+
+		// expectedCounterpaty is the counterparty of the counterparty's channel end
+		// (i.e self)
+		expectedCounterparty := types.NewCounterparty(portID, "")
+		expectedChannel := types.NewChannel(
+			types.INIT, order, expectedCounterparty,
+			counterpartyHops, counterpartyVersion,
 		)
-	}
 
-	getVersions := connectionEnd.GetVersions()
-	if len(getVersions) != 1 {
-		return "", nil, sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidVersion,
-			"single version must be negotiated on connection before opening channel, got: %v",
-			getVersions,
-		)
-	}
-
-	if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
-		return "", nil, sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidVersion,
-			"connection version %s does not support channel ordering: %s",
-			getVersions[0], order.String(),
-		)
-	}
-
-	counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
-
-	// expectedCounterpaty is the counterparty of the counterparty's channel end
-	// (i.e self)
-	expectedCounterparty := types.NewCounterparty(portID, "")
-	expectedChannel := types.NewChannel(
-		types.INIT, order, expectedCounterparty,
-		counterpartyHops, counterpartyVersion,
-	)
-
-	if err := k.connectionKeeper.VerifyChannelState(
-		ctx, connectionEnd, proofHeight, proofInit,
-		counterparty.PortId, counterparty.ChannelId, expectedChannel,
-	); err != nil {
-		return "", nil, err
+		if err := k.connectionKeeper.VerifyChannelState(
+			ctx, connectionEnd, proofHeight, proofInit,
+			counterparty.PortId, counterparty.ChannelId, expectedChannel,
+		); err != nil {
+			return "", nil, err
+		}
 	}
 
 	var (
