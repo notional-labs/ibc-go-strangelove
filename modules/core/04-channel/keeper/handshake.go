@@ -246,33 +246,50 @@ func (k Keeper) ChanOpenAck(
 		return sdkerrors.Wrapf(types.ErrChannelCapabilityNotFound, "caller does not own capability for channel, port ID (%s) channel ID (%s)", portID, channelID)
 	}
 
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-	if !found {
-		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-	}
+	// check if the channel state verification should be handled on the localhost
+	// TODO need to check if localhost connections are enabled for this chain
+	if channel.ConnectionHops[0] == localhostID {
+		// get the counterparty channel directly from this chain's channelKeeper store
+		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
 
-	if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-		return sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidConnectionState,
-			"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in TRYOPEN state
+		if !ok {
+			return fmt.Errorf("failed localhost channel state verification, counterparty channel does not exist")
+		}
+		if storedChannel.State != types.TRYOPEN {
+			return fmt.Errorf("failed localhost channel state verification, channel state is not TRYOPEN (got %s)", storedChannel.State)
+		}
+	} else {
+		// GetConnection call takes place in this else block because it will fail on localhost connections
+		// due to the connection not actually existing in state.
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
+		if !found {
+			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
+		}
+
+		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
+			return sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidConnectionState,
+				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+			)
+		}
+
+		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
+
+		// counterparty of the counterparty channel end (i.e self)
+		expectedCounterparty := types.NewCounterparty(portID, channelID)
+		expectedChannel := types.NewChannel(
+			types.TRYOPEN, channel.Ordering, expectedCounterparty,
+			counterpartyHops, counterpartyVersion,
 		)
-	}
 
-	counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
-
-	// counterparty of the counterparty channel end (i.e self)
-	expectedCounterparty := types.NewCounterparty(portID, channelID)
-	expectedChannel := types.NewChannel(
-		types.TRYOPEN, channel.Ordering, expectedCounterparty,
-		counterpartyHops, counterpartyVersion,
-	)
-
-	if err := k.connectionKeeper.VerifyChannelState(
-		ctx, connectionEnd, proofHeight, proofTry,
-		channel.Counterparty.PortId, counterpartyChannelID,
-		expectedChannel,
-	); err != nil {
-		return err
+		if err := k.connectionKeeper.VerifyChannelState(
+			ctx, connectionEnd, proofHeight, proofTry,
+			channel.Counterparty.PortId, counterpartyChannelID,
+			expectedChannel,
+		); err != nil {
+			return err
+		}
 	}
 
 	return nil
