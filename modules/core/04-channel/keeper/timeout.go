@@ -285,6 +285,66 @@ func (k Keeper) TimeoutOnClose(
 		)
 	}
 
+	// check if the packet timeout verification should be handled on the localhost
+	// TODO need to check if localhost connections are enabled for this chain
+	if channel.ConnectionHops[0] == localhostID {
+		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+		if len(commitment) == 0 {
+			EmitTimeoutPacketEvent(ctx, packet, channel)
+			// This error indicates that the timeout has already been relayed
+			// or there is a misconfigured relayer attempting to prove a timeout
+			// for a packet never sent. Core IBC will treat this error as a no-op in order to
+			// prevent an entire relay transaction from failing and consuming unnecessary fees.
+			return types.ErrNoOpMsg
+		}
+
+		packetCommitment := types.CommitPacket(k.cdc, packet)
+
+		// verify we sent the packet and haven't cleared it out yet
+		if !bytes.Equal(commitment, packetCommitment) {
+			return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
+		}
+
+		counterpartyChan, found := k.GetChannel(ctx, packet.GetDestPort(), packet.GetDestChannel())
+		if !found {
+			return sdkerrors.Wrapf(types.ErrChannelNotFound, "port ID (%s) channel ID (%s)", packet.GetDestPort(), packet.GetDestChannel())
+		}
+
+		if counterpartyChan.State != types.CLOSED {
+			return fmt.Errorf("failed localhost timeout verification, counterparty channel state is not CLOSED (got %s)", counterpartyChan.State)
+		}
+
+		switch channel.Ordering {
+		case types.ORDERED:
+			// check that packet has not been received
+			if nextSequenceRecv > packet.GetSequence() {
+				return sdkerrors.Wrapf(
+					types.ErrPacketReceived,
+					"packet already received, next sequence receive > packet sequence (%d > %d)", nextSequenceRecv, packet.GetSequence(),
+				)
+			}
+
+			expectedNextSeq, ok := k.GetNextSequenceRecv(ctx, packet.GetDestPort(), packet.GetDestChannel())
+			if !ok {
+				return fmt.Errorf("failed localhost next sequence receive verification, next sequence receive does not exist in store")
+			}
+			// check that the recv sequence is as claimed
+			if nextSequenceRecv != expectedNextSeq {
+				return fmt.Errorf("failed localhost next sequence receive verification, (%d ≠ %d)", expectedNextSeq, nextSequenceRecv)
+			}
+		case types.UNORDERED:
+			_, ok := k.GetPacketReceipt(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
+			if ok {
+				return fmt.Errorf("failed localhost packet receipt absence verification")
+			}
+		default:
+			panic(sdkerrors.Wrapf(types.ErrInvalidChannelOrdering, channel.Ordering.String()))
+		}
+
+		return nil
+	}
+
 	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
 	if !found {
 		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
