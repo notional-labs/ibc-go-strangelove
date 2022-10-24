@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -52,6 +53,74 @@ func (k Keeper) TimeoutPacket(
 		)
 	}
 
+	// check if the packet timeout verification should be handled on the localhost
+	// TODO need to check if localhost connections are enabled for this chain
+	if channel.ConnectionHops[0] == localhostID {
+
+		// check that timeout height or timeout timestamp has passed on the other end
+		timeoutHeight := packet.GetTimeoutHeight()
+		if (timeoutHeight.IsZero() || proofHeight.LT(timeoutHeight)) &&
+			(packet.GetTimeoutTimestamp() == 0 || uint64(ctx.BlockTime().UnixNano()) < packet.GetTimeoutTimestamp()) {
+			return sdkerrors.Wrap(types.ErrPacketTimeout, "packet timeout has not been reached for height or timestamp")
+		}
+
+		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+		if len(commitment) == 0 {
+			EmitTimeoutPacketEvent(ctx, packet, channel)
+			// This error indicates that the timeout has already been relayed
+			// or there is a misconfigured relayer attempting to prove a timeout
+			// for a packet never sent. Core IBC will treat this error as a no-op in order to
+			// prevent an entire relay transaction from failing and consuming unnecessary fees.
+			return types.ErrNoOpMsg
+		}
+
+		if channel.State != types.OPEN {
+			return sdkerrors.Wrapf(
+				types.ErrInvalidChannelState,
+				"channel state is not OPEN (got %s)", channel.State.String(),
+			)
+		}
+
+		packetCommitment := types.CommitPacket(k.cdc, packet)
+
+		// verify we sent the packet and haven't cleared it out yet
+		if !bytes.Equal(commitment, packetCommitment) {
+			return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
+		}
+
+		switch channel.Ordering {
+		case types.ORDERED:
+			// check that packet has not been received
+			if nextSequenceRecv > packet.GetSequence() {
+				return sdkerrors.Wrapf(
+					types.ErrPacketReceived,
+					"packet already received, next sequence receive > packet sequence (%d > %d)", nextSequenceRecv, packet.GetSequence(),
+				)
+			}
+
+			expectedNextSeq, ok := k.GetNextSequenceRecv(ctx, packet.GetDestPort(), packet.GetDestChannel())
+			if !ok {
+				return fmt.Errorf("failed localhost next sequence receive verification, next sequence receive does not exist in store")
+			}
+			// check that the recv sequence is as claimed
+			if nextSequenceRecv != expectedNextSeq {
+				return fmt.Errorf("failed localhost next sequence receive verification, (%d ≠ %d)", expectedNextSeq, nextSequenceRecv)
+			}
+		case types.UNORDERED:
+			_, ok := k.GetPacketReceipt(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
+			if ok {
+				return fmt.Errorf("failed localhost packet receipt absence verification")
+			}
+		default:
+			panic(sdkerrors.Wrapf(types.ErrInvalidChannelOrdering, channel.Ordering.String()))
+		}
+
+		return nil
+	}
+
+	// GetConnection call takes place in this else block because it will fail on localhost connections
+	// due to the connection not actually existing in state.
 	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
 	if !found {
 		return sdkerrors.Wrap(
