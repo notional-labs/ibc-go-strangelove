@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
-
 	clienttypes "github.com/cosmos/ibc-go/v5/modules/core/02-client/types"
 	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
+	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/keeper"
 	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
@@ -769,6 +769,480 @@ func (suite *KeeperTestSuite) TestChanCloseConfirm() {
 			err := suite.chainB.App.GetIBCKeeper().ChannelKeeper.ChanCloseConfirm(
 				suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID, channelCap,
 				proof, malleateHeight(proofHeight, heightDiff),
+			)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+			} else {
+				suite.Require().Error(err)
+			}
+		})
+	}
+}
+
+// TestLocalhostChanOpenInit tests the OpenInit handshake call for channels where both ends are on the same chain.
+// It uses message passing to enter into the appropriate state and then calls ChanOpenInit directly. The channel is
+// being created on chainA. The port capability must be created on chainA before ChanOpenInit can succeed.
+func (suite *KeeperTestSuite) TestLocalhostChanOpenInit() {
+	var (
+		path     *ibctesting.Path
+		features []string
+		portCap  *capabilitytypes.Capability
+	)
+
+	testCases := []testCase{
+		{"success", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			features = []string{"ORDER_ORDERED", "ORDER_UNORDERED"}
+			suite.chainA.CreatePortCapability(suite.chainA.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
+			portCap = suite.chainA.GetPortCapability(ibctesting.MockPort)
+		}, true},
+		{"channel already exists", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+		}, false},
+		{"capability is incorrect", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			features = []string{"ORDER_ORDERED", "ORDER_UNORDERED"}
+			portCap = capabilitytypes.NewCapability(3)
+		}, false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
+			// run test for all types of ordering
+			for _, order := range []types.Order{types.UNORDERED, types.ORDERED} {
+				suite.SetupLocalhostTest() // reset test
+				path = ibctesting.NewPath(suite.chainA, suite.chainB)
+				path.EndpointA.ChannelConfig.Order = order
+				path.EndpointB.ChannelConfig.Order = order
+
+				tc.malleate()
+
+				counterparty := types.NewCounterparty(ibctesting.MockPort, ibctesting.FirstChannelID)
+
+				channelID, cap, err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.ChanOpenInit(
+					suite.chainA.GetContext(), path.EndpointA.ChannelConfig.Order, []string{path.EndpointA.ConnectionID},
+					path.EndpointA.ChannelConfig.PortID, portCap, counterparty, path.EndpointA.ChannelConfig.Version,
+				)
+
+				// check if order is supported by channel to determine expected behaviour
+				orderSupported := false
+				for _, f := range features {
+					if f == order.String() {
+						orderSupported = true
+					}
+				}
+
+				// Testcase must have expectedPass = true AND channel order supported before
+				// asserting the channel handshake initiation succeeded
+				if tc.expPass && orderSupported {
+					suite.Require().NoError(err)
+					suite.Require().NotNil(cap)
+					suite.Require().Equal(types.FormatChannelIdentifier(0), channelID)
+
+					chanCap, ok := suite.chainA.App.GetScopedIBCKeeper().GetCapability(
+						suite.chainA.GetContext(),
+						host.ChannelCapabilityPath(path.EndpointA.ChannelConfig.PortID, channelID),
+					)
+					suite.Require().True(ok, "could not retrieve channel capability after successful ChanOpenInit")
+					suite.Require().Equal(chanCap.String(), cap.String(), "channel capability is not correct")
+				} else {
+					suite.Require().Error(err)
+					suite.Require().Nil(cap)
+					suite.Require().Equal("", channelID)
+				}
+			}
+		})
+	}
+}
+
+// TestLocalhostChanOpenTry tests the OpenTry handshake call for channels where both ends are on the same chain.
+// It uses message passing to enter into the appropriate state and then calls ChanOpenTry directly. The channel
+// is being created on chainB. The port capability must be created on chainB before ChanOpenTry can succeed.
+func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
+	var (
+		path    *ibctesting.Path
+		portCap *capabilitytypes.Capability
+	)
+
+	testCases := []testCase{
+		{"success", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+			path.EndpointA.ChanOpenInit()
+
+			suite.chainB.CreatePortCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
+			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
+		}, true},
+		{"localhost channel verification failed", func() {
+			// the channel for EndpointA does not exist in state
+			suite.coordinator.SetupLocalhostConnections(path)
+			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
+		}, false},
+		{"port capability not found", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+			path.EndpointA.ChanOpenInit()
+
+			portCap = capabilitytypes.NewCapability(3)
+		}, false},
+		{"counterparty channel not in INIT state", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			// move channel state for EndpointA to the OPEN state then call ChanOpenTry again
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+
+			suite.chainB.CreatePortCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
+			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
+		}, false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
+			suite.SetupLocalhostTest() // reset test
+
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			counterparty := types.NewCounterparty(path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID)
+
+			channelID, cap, err := suite.chainB.App.GetIBCKeeper().ChannelKeeper.ChanOpenTry(
+				suite.chainB.GetContext(), types.ORDERED, []string{path.EndpointB.ConnectionID},
+				path.EndpointB.ChannelConfig.PortID, portCap, counterparty, path.EndpointA.ChannelConfig.Version,
+				nil, nil,
+			)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+				suite.Require().NotNil(cap)
+
+				chanCap, ok := suite.chainB.App.GetScopedIBCKeeper().GetCapability(
+					suite.chainB.GetContext(),
+					host.ChannelCapabilityPath(path.EndpointB.ChannelConfig.PortID, channelID),
+				)
+				suite.Require().True(ok, "could not retrieve channel capapbility after successful ChanOpenTry")
+				suite.Require().Equal(chanCap.String(), cap.String(), "channel capability is not correct")
+			} else {
+				suite.Require().Error(err)
+			}
+		})
+	}
+}
+
+// TestLocalhostChanOpenAck tests the OpenAck handshake call for channels where both ends are on the same chain.
+// It uses message passing to enter into the appropriate state and then calls ChanOpenAck directly. The handshake
+// call is occurring on chainA.
+func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
+	var (
+		path                  *ibctesting.Path
+		counterpartyChannelID string
+		channelCap            *capabilitytypes.Capability
+	)
+
+	testCases := []testCase{
+		{"success", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			counterpartyChannelID = path.EndpointB.ChannelID
+
+			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, true},
+		{"success with empty stored counterparty channel ID", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			// set the channel's counterparty channel identifier to empty string
+			channel := path.EndpointA.GetChannel()
+			channel.Counterparty.ChannelId = ""
+
+			// use a different channel identifier
+			counterpartyChannelID = path.EndpointB.ChannelID
+
+			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetChannel(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channel)
+
+			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, true},
+		{"channel doesn't exist", func() {}, false},
+		{"channel state is not INIT", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			// create fully open channels on both ends
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+
+			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"invalid counterparty channel identifier", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			counterpartyChannelID = "otheridentifier"
+
+			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"channel verification failed", func() {
+			// chainB is INIT, chainA in TRYOPEN
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			err := path.EndpointB.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointA.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"channel capability not found", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			path.EndpointB.LocalhostChanOpenTry()
+
+			channelCap = capabilitytypes.NewCapability(6)
+		}, false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
+			suite.SetupLocalhostTest() // reset
+			counterpartyChannelID = "" // must be explicitly changed in malleate
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			if counterpartyChannelID == "" {
+				counterpartyChannelID = ibctesting.FirstChannelID
+			}
+
+			err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.ChanOpenAck(
+				suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channelCap, path.EndpointB.ChannelConfig.Version, counterpartyChannelID,
+				nil, nil,
+			)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+			} else {
+				suite.Require().Error(err)
+			}
+		})
+	}
+}
+
+// TestLocalhostChanOpenConfirm tests the OpenAck handshake call for channels where both ends are on the same chain.
+// It uses message passing to enter into the appropriate state and then calls ChanOpenConfirm directly. The handshake
+// call is occurring on chainB.
+func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
+	var (
+		path       *ibctesting.Path
+		channelCap *capabilitytypes.Capability
+	)
+
+	testCases := []testCase{
+		{"success", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			err = path.EndpointA.LocalhostChanOpenAck()
+			suite.Require().NoError(err)
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, true},
+		{"channel doesn't exist", func() {}, false},
+		{"channel state is not TRYOPEN", func() {
+			// create fully open channels on both ends
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, false},
+		{"channel verification failed", func() {
+			// chainA is INIT, chainB in TRYOPEN
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, false},
+		{"channel capability not found", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelOrdered()
+
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			err = path.EndpointA.LocalhostChanOpenAck()
+			suite.Require().NoError(err)
+
+			channelCap = capabilitytypes.NewCapability(6)
+		}, false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
+			suite.SetupLocalhostTest() // reset
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			err := suite.chainB.App.GetIBCKeeper().ChannelKeeper.ChanOpenConfirm(
+				suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID,
+				channelCap, nil, nil,
+			)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+			} else {
+				suite.Require().Error(err)
+			}
+		})
+	}
+}
+
+// TestLocalhostChanCloseConfirm tests the confirming closing channel ends by calling ChanCloseConfirm
+// on chainB. Both chains will use message passing to setup OPEN channels. ChanCloseInit is
+// bypassed on chainA by setting the channel state in the ChannelKeeper.
+func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
+	var (
+		path       *ibctesting.Path
+		channelCap *capabilitytypes.Capability
+	)
+
+	testCases := []testCase{
+		{"success", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+
+			channel := path.EndpointA.GetChannel()
+
+			channel.State = types.CLOSED
+			path.EndpointA.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(path.EndpointA.Chain.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channel)
+		}, true},
+		{"channel doesn't exist", func() {
+			// any non-nil values work for connections
+			path.EndpointA.ChannelID = keeper.LocalhostID
+			path.EndpointB.ChannelID = keeper.LocalhostID
+
+			// ensure channel capability check passes
+			suite.chainB.CreateChannelCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID)
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID)
+		}, false},
+		{"channel state is CLOSED", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+
+			channel := path.EndpointB.GetChannel()
+
+			channel.State = types.CLOSED
+			path.EndpointB.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(path.EndpointB.Chain.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, channel)
+		}, false},
+		{"channel verification failed", func() {
+			// channel not closed
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, false},
+		{"channel capability not found", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+
+			suite.Require().NoError(path.EndpointA.ChanOpenInit())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
+			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
+			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+
+			channel := path.EndpointA.GetChannel()
+
+			channel.State = types.CLOSED
+			path.EndpointA.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(path.EndpointA.Chain.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channel)
+
+			channelCap = capabilitytypes.NewCapability(3)
+		}, false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
+			suite.SetupLocalhostTest() // reset
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			err := suite.chainB.App.GetIBCKeeper().ChannelKeeper.ChanCloseConfirm(
+				suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, channelCap,
+				nil, nil,
 			)
 
 			if tc.expPass {
