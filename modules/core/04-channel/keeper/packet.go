@@ -18,7 +18,7 @@ import (
 )
 
 // TODO possibly move this constant to somewhere that makes more sense
-const localhostID = "localhost"
+const LocalhostID = "connection-localhost"
 
 // SendPacket is called by a module in order to send an IBC packet on a channel
 // end owned by the calling module to the corresponding module on the counterparty
@@ -202,7 +202,7 @@ func (k Keeper) RecvPacket(
 
 	// check if the packet commitment verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 		// get the desired state directly from this chain's channelKeeper
 		storedCommitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
@@ -444,7 +444,7 @@ func (k Keeper) AcknowledgePacket(
 
 	// check if the packet acknowledgement verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 		commitment = k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
 		if len(commitment) == 0 {

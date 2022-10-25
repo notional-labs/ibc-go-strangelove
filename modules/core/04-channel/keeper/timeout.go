@@ -55,7 +55,7 @@ func (k Keeper) TimeoutPacket(
 
 	// check if the packet timeout verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 
 		// check that timeout height or timeout timestamp has passed on the other end
 		timeoutHeight := packet.GetTimeoutHeight()
@@ -287,7 +287,7 @@ func (k Keeper) TimeoutOnClose(
 
 	// check if the packet timeout verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
 		if len(commitment) == 0 {

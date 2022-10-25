@@ -27,27 +27,29 @@ func (k Keeper) ChanOpenInit(
 	counterparty types.Counterparty,
 	version string,
 ) (string, *capabilitytypes.Capability, error) {
-	// connection hop length checked on msg.ValidateBasic()
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
-	if !found {
-		return "", nil, sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionHops[0])
-	}
+	if connectionHops[0] != LocalhostID {
+		// connection hop length checked on msg.ValidateBasic()
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
+		if !found {
+			return "", nil, sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionHops[0])
+		}
 
-	getVersions := connectionEnd.GetVersions()
-	if len(getVersions) != 1 {
-		return "", nil, sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidVersion,
-			"single version must be negotiated on connection before opening channel, got: %v",
-			getVersions,
-		)
-	}
+		getVersions := connectionEnd.GetVersions()
+		if len(getVersions) != 1 {
+			return "", nil, sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidVersion,
+				"single version must be negotiated on connection before opening channel, got: %v",
+				getVersions,
+			)
+		}
 
-	if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
-		return "", nil, sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidVersion,
-			"connection version %s does not support channel ordering: %s",
-			getVersions[0], order.String(),
-		)
+		if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
+			return "", nil, sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidVersion,
+				"connection version %s does not support channel ordering: %s",
+				getVersions[0], order.String(),
+			)
+		}
 	}
 
 	if !k.portKeeper.Authenticate(ctx, portCap, portID) {
@@ -119,7 +121,7 @@ func (k Keeper) ChanOpenTry(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if connectionHops[0] == localhostID {
+	if connectionHops[0] == LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, counterparty.PortId, counterparty.ChannelId)
 
@@ -249,9 +251,9 @@ func (k Keeper) ChanOpenAck(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
-		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
+		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, counterpartyChannelID)
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in TRYOPEN state
 		if !ok {
@@ -352,7 +354,7 @@ func (k Keeper) ChanOpenConfirm(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
 
@@ -496,7 +498,7 @@ func (k Keeper) ChanCloseConfirm(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == localhostID {
+	if channel.ConnectionHops[0] == LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
 
