@@ -36,6 +36,13 @@ func (suite *KeeperTestSuite) SetupTest() {
 	suite.coordinator.CommitNBlocks(suite.chainB, 2)
 }
 
+// SetupLocalhostTest creates a coordinator where the source and counterparty chains are the same chain.
+func (suite *KeeperTestSuite) SetupLocalhostTest() {
+	suite.coordinator = ibctesting.NewCoordinator(suite.T(), 2)
+	suite.chainA = suite.coordinator.GetChain(ibctesting.GetChainID(1))
+	suite.chainB = suite.coordinator.GetChain(ibctesting.GetChainID(1))
+}
+
 // TestSetChannel create clients and connections on both chains. It tests for the non-existence
 // and existence of a channel in INIT on chainA.
 func (suite *KeeperTestSuite) TestSetChannel() {

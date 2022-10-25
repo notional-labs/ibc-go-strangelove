@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/keeper"
 	"github.com/stretchr/testify/require"
 	abci "github.com/tendermint/tendermint/abci/types"
 )
@@ -99,6 +100,13 @@ func (coord *Coordinator) SetupConnections(path *Path) {
 	coord.SetupClients(path)
 
 	coord.CreateConnections(path)
+}
+
+// SetupLocalhostConnections is a helper function to set the connection ID to the localhost connection
+// identifier on both the source and counterparty ends.
+func (coord *Coordinator) SetupLocalhostConnections(path *Path) {
+	path.EndpointA.ConnectionID = keeper.LocalhostID
+	path.EndpointB.ConnectionID = keeper.LocalhostID
 }
 
 // CreateConnection constructs and executes connection handshake messages in order to create

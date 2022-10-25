@@ -370,6 +370,32 @@ func (endpoint *Endpoint) ChanOpenTry() error {
 	return nil
 }
 
+// LocalhostChanOpenTry will construct and execute a MsgChannelOpenTry on the associated endpoint.
+func (endpoint *Endpoint) LocalhostChanOpenTry() error {
+	msg := channeltypes.NewMsgChannelOpenTry(
+		endpoint.ChannelConfig.PortID,
+		endpoint.ChannelConfig.Version, endpoint.ChannelConfig.Order, []string{endpoint.ConnectionID},
+		endpoint.Counterparty.ChannelConfig.PortID, endpoint.Counterparty.ChannelID, endpoint.Counterparty.ChannelConfig.Version,
+		nil, clienttypes.Height{},
+		endpoint.Chain.SenderAccount.GetAddress().String(),
+	)
+	res, err := endpoint.Chain.SendMsgs(msg)
+	if err != nil {
+		return err
+	}
+
+	if endpoint.ChannelID == "" {
+		endpoint.ChannelID, err = ParseChannelIDFromEvents(res.GetEvents())
+		require.NoError(endpoint.Chain.T, err)
+	}
+
+	// update version to selected app version
+	// NOTE: this update must be performed after the endpoint channelID is set
+	endpoint.ChannelConfig.Version = endpoint.GetChannel().Version
+
+	return nil
+}
+
 // ChanOpenAck will construct and execute a MsgChannelOpenAck on the associated endpoint.
 func (endpoint *Endpoint) ChanOpenAck() error {
 	err := endpoint.UpdateClient()
@@ -394,6 +420,24 @@ func (endpoint *Endpoint) ChanOpenAck() error {
 	return nil
 }
 
+// LocalhostChanOpenAck will construct and execute a MsgChannelOpenAck on the associated endpoint.
+func (endpoint *Endpoint) LocalhostChanOpenAck() error {
+	msg := channeltypes.NewMsgChannelOpenAck(
+		endpoint.ChannelConfig.PortID, endpoint.ChannelID,
+		endpoint.Counterparty.ChannelID, endpoint.Counterparty.ChannelConfig.Version, // testing doesn't use flexible selection
+		nil, clienttypes.Height{},
+		endpoint.Chain.SenderAccount.GetAddress().String(),
+	)
+
+	if err := endpoint.Chain.sendMsgs(msg); err != nil {
+		return err
+	}
+
+	endpoint.ChannelConfig.Version = endpoint.GetChannel().Version
+
+	return nil
+}
+
 // ChanOpenConfirm will construct and execute a MsgChannelOpenConfirm on the associated endpoint.
 func (endpoint *Endpoint) ChanOpenConfirm() error {
 	err := endpoint.UpdateClient()
@@ -405,6 +449,16 @@ func (endpoint *Endpoint) ChanOpenConfirm() error {
 	msg := channeltypes.NewMsgChannelOpenConfirm(
 		endpoint.ChannelConfig.PortID, endpoint.ChannelID,
 		proof, height,
+		endpoint.Chain.SenderAccount.GetAddress().String(),
+	)
+	return endpoint.Chain.sendMsgs(msg)
+}
+
+// LocalhostChanOpenConfirm will construct and execute a MsgChannelOpenConfirm on the associated endpoint.
+func (endpoint *Endpoint) LocalhostChanOpenConfirm() error {
+	msg := channeltypes.NewMsgChannelOpenConfirm(
+		endpoint.ChannelConfig.PortID, endpoint.ChannelID,
+		nil, clienttypes.Height{},
 		endpoint.Chain.SenderAccount.GetAddress().String(),
 	)
 	return endpoint.Chain.sendMsgs(msg)
