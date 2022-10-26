@@ -578,6 +578,12 @@ func (endpoint *Endpoint) AcknowledgePacket(packet channeltypes.Packet, ack []by
 	return endpoint.Chain.sendMsgs(ackMsg)
 }
 
+// AcknowledgeLocalhostPacket sends a MsgAcknowledgement to the channel associated with the endpoint.
+func (endpoint *Endpoint) AcknowledgeLocalhostPacket(packet channeltypes.Packet, ack []byte) error {
+	ackMsg := channeltypes.NewMsgAcknowledgement(packet, ack, nil, clienttypes.Height{}, endpoint.Chain.SenderAccount.GetAddress().String())
+	return endpoint.Chain.sendMsgs(ackMsg)
+}
+
 // TimeoutPacket sends a MsgTimeout to the channel associated with the endpoint.
 func (endpoint *Endpoint) TimeoutPacket(packet channeltypes.Packet) error {
 	// get proof for timeout based on channel order
