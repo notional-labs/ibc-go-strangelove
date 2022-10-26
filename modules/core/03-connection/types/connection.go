@@ -10,6 +10,8 @@ import (
 
 var _ exported.ConnectionI = (*ConnectionEnd)(nil)
 
+const LocalhostID = "connection-localhost"
+
 // NewConnectionEnd creates a new ConnectionEnd instance.
 func NewConnectionEnd(state State, clientID string, counterparty Counterparty, versions []*Version, delayPeriod uint64) ConnectionEnd {
 	return ConnectionEnd{

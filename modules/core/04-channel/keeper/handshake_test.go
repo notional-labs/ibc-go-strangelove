@@ -7,7 +7,6 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v5/modules/core/02-client/types"
 	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
-	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/keeper"
 	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
@@ -786,30 +785,22 @@ func (suite *KeeperTestSuite) TestChanCloseConfirm() {
 // being created on chainA. The port capability must be created on chainA before ChanOpenInit can succeed.
 func (suite *KeeperTestSuite) TestLocalhostChanOpenInit() {
 	var (
-		path     *ibctesting.Path
-		features []string
-		portCap  *capabilitytypes.Capability
+		path    *ibctesting.Path
+		portCap *capabilitytypes.Capability
 	)
 
 	testCases := []testCase{
 		{"success", func() {
 			suite.coordinator.SetupLocalhostConnections(path)
-			features = []string{"ORDER_ORDERED", "ORDER_UNORDERED"}
 			suite.chainA.CreatePortCapability(suite.chainA.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
 			portCap = suite.chainA.GetPortCapability(ibctesting.MockPort)
 		}, true},
 		{"channel already exists", func() {
-			suite.coordinator.SetupLocalhostConnections(path)
-
-			suite.Require().NoError(path.EndpointA.ChanOpenInit())
-			suite.Require().NoError(path.EndpointB.LocalhostChanOpenTry())
-			suite.Require().NoError(path.EndpointA.LocalhostChanOpenAck())
-			suite.Require().NoError(path.EndpointB.LocalhostChanOpenConfirm())
+			suite.coordinator.SetupLocalhost(path)
 		}, false},
 		{"capability is incorrect", func() {
 			suite.coordinator.SetupLocalhostConnections(path)
 
-			features = []string{"ORDER_ORDERED", "ORDER_UNORDERED"}
 			portCap = capabilitytypes.NewCapability(3)
 		}, false},
 	}
@@ -833,17 +824,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenInit() {
 					path.EndpointA.ChannelConfig.PortID, portCap, counterparty, path.EndpointA.ChannelConfig.Version,
 				)
 
-				// check if order is supported by channel to determine expected behaviour
-				orderSupported := false
-				for _, f := range features {
-					if f == order.String() {
-						orderSupported = true
-					}
-				}
-
 				// Testcase must have expectedPass = true AND channel order supported before
 				// asserting the channel handshake initiation succeeded
-				if tc.expPass && orderSupported {
+				if tc.expPass {
 					suite.Require().NoError(err)
 					suite.Require().NotNil(cap)
 					suite.Require().Equal(types.FormatChannelIdentifier(0), channelID)
@@ -874,9 +857,17 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 	)
 
 	testCases := []testCase{
-		{"success", func() {
+		{"success: ORDERED channel", func() {
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
+			path.EndpointA.ChanOpenInit()
+
+			suite.chainB.CreatePortCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
+			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
+		}, true},
+		{"success: UNORDERED channel", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelUnordered()
 			path.EndpointA.ChanOpenInit()
 
 			suite.chainB.CreatePortCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
@@ -953,9 +944,10 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 	)
 
 	testCases := []testCase{
-		{"success", func() {
+		{"success: ORDERED channel", func() {
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
+
 			err := path.EndpointA.ChanOpenInit()
 			suite.Require().NoError(err)
 
@@ -966,9 +958,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, true},
-		{"success with empty stored counterparty channel ID", func() {
+		{"success: UNORDERED channel", func() {
 			suite.coordinator.SetupLocalhostConnections(path)
-			path.SetChannelOrdered()
+			path.SetChannelUnordered()
 
 			err := path.EndpointA.ChanOpenInit()
 			suite.Require().NoError(err)
@@ -976,14 +968,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 			err = path.EndpointB.LocalhostChanOpenTry()
 			suite.Require().NoError(err)
 
-			// set the channel's counterparty channel identifier to empty string
-			channel := path.EndpointA.GetChannel()
-			channel.Counterparty.ChannelId = ""
-
-			// use a different channel identifier
 			counterpartyChannelID = path.EndpointB.ChannelID
-
-			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetChannel(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channel)
 
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, true},
@@ -1042,14 +1027,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
 			suite.SetupLocalhostTest() // reset
-			counterpartyChannelID = "" // must be explicitly changed in malleate
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
-
-			if counterpartyChannelID == "" {
-				counterpartyChannelID = ibctesting.FirstChannelID
-			}
 
 			err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.ChanOpenAck(
 				suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channelCap, path.EndpointB.ChannelConfig.Version, counterpartyChannelID,
@@ -1181,8 +1161,8 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 		}, true},
 		{"channel doesn't exist", func() {
 			// any non-nil values work for connections
-			path.EndpointA.ChannelID = keeper.LocalhostID
-			path.EndpointB.ChannelID = keeper.LocalhostID
+			path.EndpointA.ChannelID = connectiontypes.LocalhostID
+			path.EndpointB.ChannelID = connectiontypes.LocalhostID
 
 			// ensure channel capability check passes
 			suite.chainB.CreateChannelCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID)

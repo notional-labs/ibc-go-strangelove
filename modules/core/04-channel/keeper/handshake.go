@@ -27,7 +27,7 @@ func (k Keeper) ChanOpenInit(
 	counterparty types.Counterparty,
 	version string,
 ) (string, *capabilitytypes.Capability, error) {
-	if connectionHops[0] != LocalhostID {
+	if connectionHops[0] != connectiontypes.LocalhostID {
 		// connection hop length checked on msg.ValidateBasic()
 		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
 		if !found {
@@ -121,7 +121,7 @@ func (k Keeper) ChanOpenTry(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if connectionHops[0] == LocalhostID {
+	if connectionHops[0] == connectiontypes.LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, counterparty.PortId, counterparty.ChannelId)
 
@@ -251,7 +251,7 @@ func (k Keeper) ChanOpenAck(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == LocalhostID {
+	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, counterpartyChannelID)
 
@@ -354,7 +354,7 @@ func (k Keeper) ChanOpenConfirm(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == LocalhostID {
+	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
 
@@ -498,7 +498,7 @@ func (k Keeper) ChanCloseConfirm(
 
 	// check if the channel state verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == LocalhostID {
+	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
 		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
 

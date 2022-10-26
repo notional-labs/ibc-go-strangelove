@@ -17,9 +17,6 @@ import (
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
 )
 
-// TODO possibly move this constant to somewhere that makes more sense
-const LocalhostID = "connection-localhost"
-
 // SendPacket is called by a module in order to send an IBC packet on a channel
 // end owned by the calling module to the corresponding module on the counterparty
 // chain.
@@ -62,42 +59,66 @@ func (k Keeper) SendPacket(
 		)
 	}
 
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-	if !found {
-		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-	}
+	// TODO need to check if localhost connections are enabled for this chain
+	// check if the packet verification should be handled on the localhost
+	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
+		// check if packet is timed out
+		latestHeight := uint64(ctx.BlockHeight())
+		timeoutHeight := packet.GetTimeoutHeight()
+		if !timeoutHeight.IsZero() && latestHeight >= timeoutHeight.GetRevisionHeight() {
+			return sdkerrors.Wrapf(
+				types.ErrPacketTimeout,
+				"receiving chain block height >= packet timeout height (%d >= %s)", latestHeight, timeoutHeight,
+			)
+		}
 
-	clientState, found := k.clientKeeper.GetClientState(ctx, connectionEnd.GetClientID())
-	if !found {
-		return clienttypes.ErrConsensusStateNotFound
-	}
+		latestTimestamp := uint64(ctx.BlockTime().UnixNano())
+		if packet.GetTimeoutTimestamp() != 0 && latestTimestamp >= packet.GetTimeoutTimestamp() {
+			return sdkerrors.Wrapf(
+				types.ErrPacketTimeout,
+				"receiving chain block timestamp >= packet timeout timestamp (%s >= %s)", time.Unix(0, int64(latestTimestamp)), time.Unix(0, int64(packet.GetTimeoutTimestamp())),
+			)
+		}
+	} else {
+		// GetConnection call takes place in this else block because it will fail on localhost connections
+		// due to the connection not actually existing in state.
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
+		if !found {
+			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
+		}
 
-	// prevent accidental sends with clients that cannot be updated
-	clientStore := k.clientKeeper.ClientStore(ctx, connectionEnd.GetClientID())
-	if status := clientState.Status(ctx, clientStore, k.cdc); status != exported.Active {
-		return sdkerrors.Wrapf(clienttypes.ErrClientNotActive, "cannot send packet using client (%s) with status %s", connectionEnd.GetClientID(), status)
-	}
+		clientState, found := k.clientKeeper.GetClientState(ctx, connectionEnd.GetClientID())
+		if !found {
+			return clienttypes.ErrConsensusStateNotFound
+		}
 
-	// check if packet is timed out on the receiving chain
-	latestHeight := clientState.GetLatestHeight()
-	timeoutHeight := packet.GetTimeoutHeight()
-	if !timeoutHeight.IsZero() && latestHeight.GTE(timeoutHeight) {
-		return sdkerrors.Wrapf(
-			types.ErrPacketTimeout,
-			"receiving chain block height >= packet timeout height (%s >= %s)", latestHeight, timeoutHeight,
-		)
-	}
+		// prevent accidental sends with clients that cannot be updated
+		clientStore := k.clientKeeper.ClientStore(ctx, connectionEnd.GetClientID())
+		if status := clientState.Status(ctx, clientStore, k.cdc); status != exported.Active {
+			return sdkerrors.Wrapf(clienttypes.ErrClientNotActive, "cannot send packet using client (%s) with status %s", connectionEnd.GetClientID(), status)
+		}
 
-	latestTimestamp, err := k.connectionKeeper.GetTimestampAtHeight(ctx, connectionEnd, latestHeight)
-	if err != nil {
-		return err
-	}
+		// check if packet is timed out on the receiving chain
+		latestHeight := clientState.GetLatestHeight()
+		timeoutHeight := packet.GetTimeoutHeight()
+		if !timeoutHeight.IsZero() && latestHeight.GTE(timeoutHeight) {
+			return sdkerrors.Wrapf(
+				types.ErrPacketTimeout,
+				"receiving chain block height >= packet timeout height (%s >= %s)", latestHeight, timeoutHeight,
+			)
+		}
 
-	if packet.GetTimeoutTimestamp() != 0 && latestTimestamp >= packet.GetTimeoutTimestamp() {
-		return sdkerrors.Wrapf(
-			types.ErrPacketTimeout,
-			"receiving chain block timestamp >= packet timeout timestamp (%s >= %s)", time.Unix(0, int64(latestTimestamp)), time.Unix(0, int64(packet.GetTimeoutTimestamp())),
-		)
+		latestTimestamp, err := k.connectionKeeper.GetTimestampAtHeight(ctx, connectionEnd, latestHeight)
+		if err != nil {
+			return err
+		}
+
+		if packet.GetTimeoutTimestamp() != 0 && latestTimestamp >= packet.GetTimeoutTimestamp() {
+			return sdkerrors.Wrapf(
+				types.ErrPacketTimeout,
+				"receiving chain block timestamp >= packet timeout timestamp (%s >= %s)", time.Unix(0, int64(latestTimestamp)), time.Unix(0, int64(packet.GetTimeoutTimestamp())),
+			)
+		}
 	}
 
 	nextSequenceSend, found := k.GetNextSequenceSend(ctx, packet.GetSourcePort(), packet.GetSourceChannel())
@@ -121,7 +142,7 @@ func (k Keeper) SendPacket(
 	k.SetNextSequenceSend(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), nextSequenceSend)
 	k.SetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence(), commitment)
 
-	EmitSendPacketEvent(ctx, packet, channel, timeoutHeight)
+	EmitSendPacketEvent(ctx, packet, channel, packet.GetTimeoutHeight())
 
 	k.Logger(ctx).Info(
 		"packet sent",
@@ -202,7 +223,7 @@ func (k Keeper) RecvPacket(
 
 	// check if the packet commitment verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == LocalhostID {
+	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
 		// get the desired state directly from this chain's channelKeeper
 		storedCommitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
@@ -440,12 +461,10 @@ func (k Keeper) AcknowledgePacket(
 		)
 	}
 
-	var commitment, packetCommitment []byte
-
 	// check if the packet acknowledgement verification should be handled on the localhost
 	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == LocalhostID {
-		commitment = k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
+		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
 		if len(commitment) == 0 {
 			EmitAcknowledgePacketEvent(ctx, packet, channel)
@@ -456,7 +475,12 @@ func (k Keeper) AcknowledgePacket(
 			return types.ErrNoOpMsg
 		}
 
-		packetCommitment = types.CommitPacket(k.cdc, packet)
+		packetCommitment := types.CommitPacket(k.cdc, packet)
+
+		// verify we sent the packet and haven't cleared it out yet
+		if !bytes.Equal(commitment, packetCommitment) {
+			return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
+		}
 
 		// get the desired state directly from this chain's channelKeeper
 		storedAck, ok := k.GetPacketAcknowledgement(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
@@ -483,7 +507,7 @@ func (k Keeper) AcknowledgePacket(
 			)
 		}
 
-		commitment = k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
 		if len(commitment) == 0 {
 			EmitAcknowledgePacketEvent(ctx, packet, channel)
@@ -494,7 +518,12 @@ func (k Keeper) AcknowledgePacket(
 			return types.ErrNoOpMsg
 		}
 
-		packetCommitment = types.CommitPacket(k.cdc, packet)
+		packetCommitment := types.CommitPacket(k.cdc, packet)
+
+		// verify we sent the packet and haven't cleared it out yet
+		if !bytes.Equal(commitment, packetCommitment) {
+			return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
+		}
 
 		if err := k.connectionKeeper.VerifyPacketAcknowledgement(
 			ctx, connectionEnd, proofHeight, proof, packet.GetDestPort(), packet.GetDestChannel(),
@@ -502,11 +531,6 @@ func (k Keeper) AcknowledgePacket(
 		); err != nil {
 			return err
 		}
-	}
-
-	// verify we sent the packet and haven't cleared it out yet
-	if !bytes.Equal(commitment, packetCommitment) {
-		return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
 	}
 
 	// assert packets acknowledged in order

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	abci "github.com/tendermint/tendermint/abci/types"
 
-	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/keeper"
+	"github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
 )
 
 var (
@@ -84,6 +84,14 @@ func (coord *Coordinator) Setup(path *Path) {
 	coord.CreateChannels(path)
 }
 
+// SetupLocalhost sets up the localhost connection and channel on both ends. It will
+// fail if any error occurs. The TestChannels are returned for both chains.
+// The channels created are connected to the ibc-transfer application.
+func (coord *Coordinator) SetupLocalhost(path *Path) {
+	coord.SetupLocalhostConnections(path)
+	coord.CreateLocalhostChannels(path)
+}
+
 // SetupClients is a helper function to create clients on both chains. It assumes the
 // caller does not anticipate any errors.
 func (coord *Coordinator) SetupClients(path *Path) {
@@ -106,8 +114,8 @@ func (coord *Coordinator) SetupConnections(path *Path) {
 // SetupLocalhostConnections is a helper function to set the connection ID to the localhost connection
 // identifier on both the source and counterparty ends.
 func (coord *Coordinator) SetupLocalhostConnections(path *Path) {
-	path.EndpointA.ConnectionID = keeper.LocalhostID
-	path.EndpointB.ConnectionID = keeper.LocalhostID
+	path.EndpointA.ConnectionID = types.LocalhostID
+	path.EndpointB.ConnectionID = types.LocalhostID
 }
 
 // CreateConnection constructs and executes connection handshake messages in order to create
@@ -171,6 +179,23 @@ func (coord *Coordinator) CreateChannels(path *Path) {
 
 	// ensure counterparty is up to date
 	err = path.EndpointA.UpdateClient()
+	require.NoError(coord.T, err)
+}
+
+// CreateLocalhostChannels constructs and executes channel handshake messages in order to create
+// OPEN channels on both ends of a localhost IBC connection. The function expects the channels to be successfully
+// opened otherwise testing will fail.
+func (coord *Coordinator) CreateLocalhostChannels(path *Path) {
+	err := path.EndpointA.ChanOpenInit()
+	require.NoError(coord.T, err)
+
+	err = path.EndpointB.LocalhostChanOpenTry()
+	require.NoError(coord.T, err)
+
+	err = path.EndpointA.LocalhostChanOpenAck()
+	require.NoError(coord.T, err)
+
+	err = path.EndpointB.LocalhostChanOpenConfirm()
 	require.NoError(coord.T, err)
 }
 

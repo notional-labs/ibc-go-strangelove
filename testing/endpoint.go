@@ -492,10 +492,35 @@ func (endpoint *Endpoint) SendPacket(packet exported.PacketI) error {
 	return endpoint.Counterparty.UpdateClient()
 }
 
+// SendLocalhostPacket sends a packet through the channel keeper using the associated endpoint.
+func (endpoint *Endpoint) SendLocalhostPacket(packet exported.PacketI) error {
+	channelCap := endpoint.Chain.GetChannelCapability(packet.GetSourcePort(), packet.GetSourceChannel())
+
+	// no need to send message, acting as a module
+	err := endpoint.Chain.App.GetIBCKeeper().ChannelKeeper.SendPacket(endpoint.Chain.GetContext(), channelCap, packet)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // RecvPacket receives a packet on the associated endpoint.
 // The counterparty client is updated.
 func (endpoint *Endpoint) RecvPacket(packet channeltypes.Packet) error {
 	_, err := endpoint.RecvPacketWithResult(packet)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// LocalhostRecvPacket receives a packet on the associated endpoint.
+func (endpoint *Endpoint) LocalhostRecvPacket(packet channeltypes.Packet) error {
+	recvMsg := channeltypes.NewMsgRecvPacket(packet, nil, clienttypes.Height{}, endpoint.Chain.SenderAccount.GetAddress().String())
+
+	_, err := endpoint.Chain.SendMsgs(recvMsg)
 	if err != nil {
 		return err
 	}
