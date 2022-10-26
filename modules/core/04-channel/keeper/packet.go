@@ -483,14 +483,16 @@ func (k Keeper) AcknowledgePacket(
 		}
 
 		// get the desired state directly from this chain's channelKeeper
-		storedAck, ok := k.GetPacketAcknowledgement(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+		storedAck, ok := k.GetPacketAcknowledgement(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
 
 		// check that the packet acknowledgement actually exists in this chain's channelKeeper store
 		if !ok {
 			return fmt.Errorf("couldn't verify localhost acknowledgement, acknowledgement does not exist")
 		}
-		if !bytes.Equal(acknowledgement, storedAck) {
-			return fmt.Errorf("couldn't verify localhost acknowledgement (%s ≠ %s)", storedAck, acknowledgement)
+
+		expectedAck := types.CommitAcknowledgement(acknowledgement)
+		if !bytes.Equal(expectedAck, storedAck) {
+			return fmt.Errorf("couldn't verify localhost acknowledgement (%s ≠ %s)", expectedAck, storedAck)
 		}
 	} else {
 		// GetConnection call takes place in this else block because it will fail on localhost connections
