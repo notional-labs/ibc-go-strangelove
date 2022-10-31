@@ -59,7 +59,7 @@ func (k Keeper) TimeoutPacket(
 
 		// check that timeout height or timeout timestamp has passed on the other end
 		timeoutHeight := packet.GetTimeoutHeight()
-		if (timeoutHeight.IsZero() || proofHeight.LT(timeoutHeight)) &&
+		if timeoutHeight.IsZero() || uint64(ctx.BlockHeight()) < timeoutHeight.GetRevisionHeight() &&
 			(packet.GetTimeoutTimestamp() == 0 || uint64(ctx.BlockTime().UnixNano()) < packet.GetTimeoutTimestamp()) {
 			return sdkerrors.Wrap(types.ErrPacketTimeout, "packet timeout has not been reached for height or timestamp")
 		}
@@ -119,8 +119,6 @@ func (k Keeper) TimeoutPacket(
 		return nil
 	}
 
-	// GetConnection call takes place in this else block because it will fail on localhost connections
-	// due to the connection not actually existing in state.
 	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
 	if !found {
 		return sdkerrors.Wrap(
