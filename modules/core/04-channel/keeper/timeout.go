@@ -59,7 +59,7 @@ func (k Keeper) TimeoutPacket(
 
 		// check that timeout height or timeout timestamp has passed on the other end
 		timeoutHeight := packet.GetTimeoutHeight()
-		if timeoutHeight.IsZero() || uint64(ctx.BlockHeight()) < timeoutHeight.GetRevisionHeight() &&
+		if (timeoutHeight.IsZero() || uint64(ctx.BlockHeight()) < timeoutHeight.GetRevisionHeight()) &&
 			(packet.GetTimeoutTimestamp() == 0 || uint64(ctx.BlockTime().UnixNano()) < packet.GetTimeoutTimestamp()) {
 			return sdkerrors.Wrap(types.ErrPacketTimeout, "packet timeout has not been reached for height or timestamp")
 		}
