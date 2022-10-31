@@ -610,6 +610,19 @@ func (endpoint *Endpoint) TimeoutPacket(packet channeltypes.Packet) error {
 	return endpoint.Chain.sendMsgs(timeoutMsg)
 }
 
+// TimeoutLocalhostPacket sends a MsgTimeout to the channel associated with the endpoint.
+func (endpoint *Endpoint) TimeoutLocalhostPacket(packet channeltypes.Packet) error {
+	nextSeqRecv, found := endpoint.Counterparty.Chain.App.GetIBCKeeper().ChannelKeeper.GetNextSequenceRecv(endpoint.Counterparty.Chain.GetContext(), endpoint.ChannelConfig.PortID, endpoint.ChannelID)
+	require.True(endpoint.Chain.T, found)
+
+	timeoutMsg := channeltypes.NewMsgTimeout(
+		packet, nextSeqRecv,
+		nil, clienttypes.Height{}, endpoint.Chain.SenderAccount.GetAddress().String(),
+	)
+
+	return endpoint.Chain.sendMsgs(timeoutMsg)
+}
+
 // TimeoutOnClose sends a MsgTimeoutOnClose to the channel associated with the endpoint.
 func (endpoint *Endpoint) TimeoutOnClose(packet channeltypes.Packet) error {
 	// get proof for timeout based on channel order
@@ -650,6 +663,14 @@ func (endpoint *Endpoint) SetChannelClosed() error {
 	endpoint.Chain.Coordinator.CommitBlock(endpoint.Chain)
 
 	return endpoint.Counterparty.UpdateClient()
+}
+
+// SetLocalhostChannelClosed sets a localhost channel state to CLOSED.
+func (endpoint *Endpoint) SetLocalhostChannelClosed() {
+	channel := endpoint.GetChannel()
+
+	channel.State = channeltypes.CLOSED
+	endpoint.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(endpoint.Chain.GetContext(), endpoint.ChannelConfig.PortID, endpoint.ChannelID, channel)
 }
 
 // GetClientState retrieves the Client State for this endpoint. The
