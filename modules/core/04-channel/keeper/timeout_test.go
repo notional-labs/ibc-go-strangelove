@@ -3,6 +3,7 @@ package keeper_test
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
@@ -427,6 +428,706 @@ func (suite *KeeperTestSuite) TestTimeoutOnClose() {
 				suite.Require().NoError(err)
 			} else {
 				suite.Require().Error(err)
+			}
+		})
+	}
+}
+
+// TestLocalhostTimeoutPacket tests the TimeoutPacket call on EndpointA by ensuring the timeout has passed
+// on EndpointB, but that no ack has been written yet.
+func (suite *KeeperTestSuite) TestLocalhostTimeoutPacket() {
+	var (
+		path        *ibctesting.Path
+		packet      types.Packet
+		nextSeqRecv uint64
+		expError    *sdkerrors.Error
+	)
+
+	testCases := []testCase{
+		{"success: ORDERED - block height & timestamp", func() {
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, true},
+		{"success: UNORDERED - block height & timestamp", func() {
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, true},
+		{"success: ORDERED - block height", func() {
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, true},
+		{"success: UNORDERED - block height", func() {
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, true},
+		{"success: ORDERED - timestamp", func() {
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout timestamp that is greater than the current time
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, disabledTimeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain consensus time so that the timeout will be successful
+			suite.coordinator.IncrementTime()
+		}, true},
+		{"success: UNORDERED - timestamp", func() {
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout timestamp that is greater than the current time
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, disabledTimeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain consensus time so that the timeout will be successful
+			suite.coordinator.IncrementTime()
+		}, true},
+		{"packet already timed out: ORDERED", func() {
+			expError = types.ErrNoOpMsg
+			path.SetChannelOrdered()
+
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+
+			err = path.EndpointA.TimeoutLocalhostPacket(packet)
+			suite.Require().NoError(err)
+		}, false},
+		{"packet already timed out: UNORDERED", func() {
+			expError = types.ErrNoOpMsg
+
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+
+			err = path.EndpointA.TimeoutLocalhostPacket(packet)
+			suite.Require().NoError(err)
+		}, false},
+		{"channel not found", func() {
+			expError = types.ErrChannelNotFound
+
+			// use wrong channel naming
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, ibctesting.InvalidID, ibctesting.InvalidID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+		}, false},
+		{"channel not open", func() {
+			expError = types.ErrInvalidChannelState
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointA.SetLocalhostChannelClosed()
+
+			// increment the current chain height & consensus time
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, false},
+		{"packet destination port ≠ channel counterparty port", func() {
+			expError = types.ErrInvalidPacket
+			suite.coordinator.SetupLocalhost(path)
+
+			// use wrong port for dest
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, ibctesting.InvalidID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+		}, false},
+		{"packet destination channel ID ≠ channel counterparty channel ID", func() {
+			expError = types.ErrInvalidPacket
+			suite.coordinator.SetupLocalhost(path)
+
+			// use wrong channel for dest
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, ibctesting.InvalidID, timeoutHeight, disabledTimeoutTimestamp)
+		}, false},
+		{"timeout not reached", func() {
+			expError = types.ErrPacketTimeout
+			suite.coordinator.SetupLocalhost(path)
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+		}, false},
+		{"packet already received", func() {
+			expError = types.ErrPacketReceived
+			path.SetChannelOrdered()
+
+			nextSeqRecv = 2
+
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, false},
+		{"packet hasn't been sent", func() {
+			expError = types.ErrNoOpMsg
+			path.SetChannelOrdered()
+
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, uint64(suite.chainB.GetContext().BlockTime().UnixNano()))
+		}, false},
+		{"next seq receive verification failed", func() {
+			expError = types.ErrPacketSequenceOutOfOrder
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetNextSequenceRecv(suite.chainA.GetContext(), path.EndpointA.Counterparty.ChannelConfig.PortID, path.EndpointA.Counterparty.ChannelID, 2)
+
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// increment the current chain height & consensus time
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, false},
+		{"packet ack verification failed", func() {
+			expError = types.ErrAcknowledgementExists
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// recv the packet so that the packet receipt verification fails on timeout
+			err = path.EndpointB.LocalhostRecvPacket(packet)
+			suite.Require().NoError(err)
+		}, false},
+	}
+
+	for i, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s, %d/%d tests", tc.msg, i, len(testCases)), func() {
+			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
+			nextSeqRecv = 1            // must be explicitly changed
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.TimeoutPacket(suite.chainA.GetContext(), packet, nil, nil, nextSeqRecv)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+			} else {
+				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
+			}
+		})
+	}
+}
+
+// TestLocalhostTimeoutExectued verifies that packet commitments are deleted on chainA after the
+// channel capabilities are verified.
+func (suite *KeeperTestSuite) TestLocalhostTimeoutExecuted() {
+	var (
+		path     *ibctesting.Path
+		packet   types.Packet
+		chanCap  *capabilitytypes.Capability
+		expError error
+	)
+
+	testCases := []testCase{
+		{"success: ORDERED", func() {
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, true},
+		{"success: UNORDERED", func() {
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+
+			// increment the current chain height & consensus time so that the timeout will be successful
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, true},
+		{"channel not found", func() {
+			expError = types.ErrChannelNotFound
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+
+			// use wrong channel naming
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, ibctesting.InvalidID, ibctesting.InvalidID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+
+			// increment the current chain height & consensus time
+			suite.coordinator.CommitBlock(suite.chainA)
+		}, false},
+		{"channel capability not found: ORDERED", func() {
+			expError = types.ErrChannelCapabilityNotFound
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			chanCap = capabilitytypes.NewCapability(100)
+		}, false},
+		{"channel capability not found: UNORDERED", func() {
+			expError = types.ErrChannelCapabilityNotFound
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height that is greater than the current height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			chanCap = capabilitytypes.NewCapability(100)
+		}, false},
+	}
+
+	for i, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s, %d/%d tests", tc.msg, i, len(testCases)), func() {
+			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.TimeoutExecuted(suite.chainA.GetContext(), chanCap, packet)
+			pc := suite.chainA.App.GetIBCKeeper().ChannelKeeper.GetPacketCommitment(suite.chainA.GetContext(), packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+			if tc.expPass {
+				suite.NoError(err)
+				suite.Nil(pc)
+			} else {
+				suite.Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
+			}
+		})
+	}
+}
+
+// TestLocalhostTimeoutOnClose tests the call TimeoutOnClose on chainA by closing the corresponding
+// channel on chainB after the packet commitment has been created.
+func (suite *KeeperTestSuite) TestLocalhostTimeoutOnClose() {
+	var (
+		path        *ibctesting.Path
+		packet      types.Packet
+		chanCap     *capabilitytypes.Capability
+		nextSeqRecv uint64
+		expError    error
+	)
+
+	testCases := []testCase{
+		{"success: ORDERED", func() {
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, true},
+		{"success: UNORDERED", func() {
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, true},
+		{"channel not found", func() {
+			expError = types.ErrChannelNotFound
+			suite.coordinator.SetupLocalhost(path)
+
+			// use wrong channel naming
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, ibctesting.InvalidID, ibctesting.InvalidID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+		}, false},
+		{"packet dest port ≠ channel counterparty port", func() {
+			expError = types.ErrInvalidPacket
+			suite.coordinator.SetupLocalhost(path)
+
+			// use wrong port for dest
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, ibctesting.InvalidID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"packet dest channel ID ≠ channel counterparty channel ID", func() {
+			expError = types.ErrInvalidPacket
+			suite.coordinator.SetupLocalhost(path)
+
+			// use wrong channel for dest
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, ibctesting.InvalidID, timeoutHeight, disabledTimeoutTimestamp)
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"packet hasn't been sent: ORDERED", func() {
+			expError = types.ErrNoOpMsg
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, clienttypes.GetSelfHeight(suite.chainB.GetContext()), uint64(suite.chainB.GetContext().BlockTime().UnixNano()))
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"packet hasn't been sent: UNORDERED", func() {
+			expError = types.ErrNoOpMsg
+			suite.coordinator.SetupLocalhost(path)
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, clienttypes.GetSelfHeight(suite.chainB.GetContext()), uint64(suite.chainB.GetContext().BlockTime().UnixNano()))
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"packet already received: ORDERED", func() {
+			expError = types.ErrPacketReceived
+			path.SetChannelOrdered()
+			nextSeqRecv = 2
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"channel verification failed: ORDERED", func() {
+			expError = types.ErrInvalidChannelState
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"channel verification failed: UNORDERED", func() {
+			expError = types.ErrInvalidChannelState
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"next seq receive verification failed", func() {
+			expError = types.ErrPacketSequenceOutOfOrder
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetNextSequenceRecv(suite.chainA.GetContext(), path.EndpointA.Counterparty.ChannelConfig.PortID, path.EndpointA.Counterparty.ChannelID, 2)
+
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"packet ack verification failed", func() {
+			expError = types.ErrAcknowledgementExists
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			// recv the packet so that the packet receipt verification fails on timeout
+			err = path.EndpointB.LocalhostRecvPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+		}, false},
+		{"incorrect capability: ORDERED", func() {
+			expError = types.ErrInvalidChannelCapability
+			path.SetChannelOrdered()
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+
+			chanCap = capabilitytypes.NewCapability(100)
+		}, false},
+		{"incorrect capability: UNORDERED", func() {
+			expError = types.ErrInvalidChannelCapability
+			suite.coordinator.SetupLocalhost(path)
+
+			// we need to set a timeout height & timestamp that is greater than the current time/height
+			// since both channel ends are on the same chain the send packet call will fail if this does not occur
+			timeoutHeight := clienttypes.Height{
+				RevisionNumber: 1,
+				RevisionHeight: uint64(suite.chainB.GetContext().BlockHeight() + 1),
+			}
+			timeoutTime := uint64(suite.chainB.GetContext().BlockTime().Add(1 * time.Second).UnixNano())
+
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, timeoutTime)
+			err := path.EndpointA.SendLocalhostPacket(packet)
+			suite.Require().NoError(err)
+
+			path.EndpointB.SetLocalhostChannelClosed()
+
+			chanCap = capabilitytypes.NewCapability(100)
+		}, false},
+	}
+
+	for i, tc := range testCases {
+		tc := tc
+		suite.Run(fmt.Sprintf("Case %s, %d/%d tests", tc.msg, i, len(testCases)), func() {
+			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
+			nextSeqRecv = 1            // must be explicitly changed
+			path = ibctesting.NewPath(suite.chainA, suite.chainB)
+
+			tc.malleate()
+
+			err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.TimeoutOnClose(suite.chainA.GetContext(), chanCap, packet, nil, nil, nil, nextSeqRecv)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+			} else {
+				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}
