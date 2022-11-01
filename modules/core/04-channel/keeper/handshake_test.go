@@ -1,9 +1,11 @@
 package keeper_test
 
 import (
+	"errors"
 	"fmt"
 
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
+	porttypes "github.com/cosmos/ibc-go/v5/modules/core/05-port/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v5/modules/core/02-client/types"
 	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
@@ -852,8 +854,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenInit() {
 // is being created on chainB. The port capability must be created on chainB before ChanOpenTry can succeed.
 func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 	var (
-		path    *ibctesting.Path
-		portCap *capabilitytypes.Capability
+		path     *ibctesting.Path
+		portCap  *capabilitytypes.Capability
+		expError error
 	)
 
 	testCases := []testCase{
@@ -874,11 +877,13 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
 		}, true},
 		{"localhost channel verification failed", func() {
+			expError = types.ErrChannelNotFound
 			// the channel for EndpointA does not exist in state
 			suite.coordinator.SetupLocalhostConnections(path)
 			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
 		}, false},
 		{"port capability not found", func() {
+			expError = porttypes.ErrInvalidPort
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
 			path.EndpointA.ChanOpenInit()
@@ -886,6 +891,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 			portCap = capabilitytypes.NewCapability(3)
 		}, false},
 		{"counterparty channel not in INIT state", func() {
+			expError = types.ErrInvalidChannelState
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
 
@@ -903,6 +909,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
 			suite.SetupLocalhostTest() // reset test
+			expError = nil             // must be explicitly changed by failed cases
 
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
@@ -928,6 +935,10 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 				suite.Require().Equal(chanCap.String(), cap.String(), "channel capability is not correct")
 			} else {
 				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}
@@ -941,6 +952,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 		path                  *ibctesting.Path
 		counterpartyChannelID string
 		channelCap            *capabilitytypes.Capability
+		expError              error
 	)
 
 	testCases := []testCase{
@@ -972,8 +984,11 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, true},
-		{"channel doesn't exist", func() {}, false},
+		{"channel doesn't exist", func() {
+			expError = types.ErrChannelNotFound
+		}, false},
 		{"channel state is not INIT", func() {
+			expError = types.ErrInvalidChannelState
 			suite.coordinator.SetupLocalhostConnections(path)
 
 			// create fully open channels on both ends
@@ -985,6 +1000,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"invalid counterparty channel identifier", func() {
+			expError = types.ErrChannelNotFound
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
 
@@ -998,7 +1014,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
-		{"channel verification failed", func() {
+		{"counterparty channel verification failed", func() {
+			expError = types.ErrInvalidChannelState
+
 			// chainB is INIT, chainA in TRYOPEN
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
@@ -1012,6 +1030,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"channel capability not found", func() {
+			expError = types.ErrChannelCapabilityNotFound
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
 			err := path.EndpointA.ChanOpenInit()
@@ -1027,6 +1046,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
 			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
@@ -1040,6 +1060,10 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenAck() {
 				suite.Require().NoError(err)
 			} else {
 				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}
@@ -1052,6 +1076,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
 	var (
 		path       *ibctesting.Path
 		channelCap *capabilitytypes.Capability
+		expError   error
 	)
 
 	testCases := []testCase{
@@ -1070,8 +1095,12 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
 
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, true},
-		{"channel doesn't exist", func() {}, false},
+		{"channel doesn't exist", func() {
+			expError = types.ErrChannelNotFound
+		}, false},
 		{"channel state is not TRYOPEN", func() {
+			expError = types.ErrInvalidChannelState
+
 			// create fully open channels on both ends
 			suite.coordinator.SetupLocalhostConnections(path)
 
@@ -1082,7 +1111,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
 
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, false},
-		{"channel verification failed", func() {
+		{"counterparty channel verification failed", func() {
+			expError = types.ErrInvalidChannelState
+
 			// chainA is INIT, chainB in TRYOPEN
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
@@ -1096,6 +1127,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, false},
 		{"channel capability not found", func() {
+			expError = types.ErrChannelCapabilityNotFound
 			suite.coordinator.SetupLocalhostConnections(path)
 			path.SetChannelOrdered()
 
@@ -1116,6 +1148,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
 			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
@@ -1129,6 +1162,10 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenConfirm() {
 				suite.Require().NoError(err)
 			} else {
 				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}
@@ -1141,6 +1178,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 	var (
 		path       *ibctesting.Path
 		channelCap *capabilitytypes.Capability
+		expError   error
 	)
 
 	testCases := []testCase{
@@ -1160,15 +1198,17 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 			path.EndpointA.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(path.EndpointA.Chain.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channel)
 		}, true},
 		{"channel doesn't exist", func() {
-			// any non-nil values work for connections
-			path.EndpointA.ChannelID = connectiontypes.LocalhostID
-			path.EndpointB.ChannelID = connectiontypes.LocalhostID
+			expError = types.ErrChannelNotFound
+
+			path.EndpointA.ChannelID = ibctesting.FirstChannelID
+			path.EndpointB.ChannelID = ibctesting.FirstChannelID
 
 			// ensure channel capability check passes
 			suite.chainB.CreateChannelCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID)
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, ibctesting.FirstChannelID)
 		}, false},
 		{"channel state is CLOSED", func() {
+			expError = types.ErrInvalidChannelState
 			suite.coordinator.SetupLocalhostConnections(path)
 
 			suite.Require().NoError(path.EndpointA.ChanOpenInit())
@@ -1183,7 +1223,9 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 			channel.State = types.CLOSED
 			path.EndpointB.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(path.EndpointB.Chain.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, channel)
 		}, false},
-		{"channel verification failed", func() {
+		{"counterparty channel verification failed", func() {
+			expError = types.ErrInvalidChannelState
+
 			// channel not closed
 			suite.coordinator.SetupLocalhostConnections(path)
 
@@ -1195,6 +1237,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, false},
 		{"channel capability not found", func() {
+			expError = types.ErrChannelCapabilityNotFound
 			suite.coordinator.SetupLocalhostConnections(path)
 
 			suite.Require().NoError(path.EndpointA.ChanOpenInit())
@@ -1217,6 +1260,7 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
 			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
@@ -1230,6 +1274,10 @@ func (suite *KeeperTestSuite) TestLocalhostChanCloseConfirm() {
 				suite.Require().NoError(err)
 			} else {
 				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}

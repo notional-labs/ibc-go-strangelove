@@ -892,6 +892,7 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 		path       *ibctesting.Path
 		packet     exported.PacketI
 		channelCap *capabilitytypes.Capability
+		expError   error
 	)
 
 	testCases := []testCase{
@@ -907,29 +908,38 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, true},
 		{"sending packet out of order on UNORDERED channel", func() {
+			expError = types.ErrInvalidPacket
+
 			// setup creates an unordered channel
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 5, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"sending packet out of order on ORDERED channel", func() {
+			expError = types.ErrInvalidPacket
+
 			path.SetChannelOrdered()
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 5, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"packet basic validation failed, empty packet data", func() {
+			expError = types.ErrInvalidPacket
+
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket([]byte{}, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"channel not found", func() {
+			expError = types.ErrChannelNotFound
+
 			// use wrong channel naming
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, ibctesting.InvalidID, ibctesting.InvalidID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"channel closed", func() {
+			expError = types.ErrInvalidChannelState
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 
@@ -939,18 +949,21 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 			path.EndpointA.Chain.App.GetIBCKeeper().ChannelKeeper.SetChannel(path.EndpointA.Chain.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, channel)
 		}, false},
 		{"packet dest port ≠ channel counterparty port", func() {
+			expError = types.ErrInvalidPacket
 			suite.coordinator.SetupLocalhost(path)
 			// use wrong port for dest
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, ibctesting.InvalidID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"packet dest channel ID ≠ channel counterparty channel ID", func() {
+			expError = types.ErrInvalidPacket
 			suite.coordinator.SetupLocalhost(path)
 			// use wrong channel for dest
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, ibctesting.InvalidID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"timeout height passed", func() {
+			expError = types.ErrPacketTimeout
 			suite.coordinator.SetupLocalhost(path)
 			height := clienttypes.Height{
 				RevisionNumber: 1,
@@ -960,6 +973,7 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"timeout timestamp passed", func() {
+			expError = types.ErrPacketTimeout
 			suite.coordinator.SetupLocalhost(path)
 
 			timestamp := uint64(suite.chainA.GetContext().BlockTime().UnixNano())
@@ -967,26 +981,15 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, disabledTimeoutHeight, timestamp)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
-		{"next sequence send not found", func() {
-			path := ibctesting.NewPath(suite.chainA, suite.chainB)
-			suite.coordinator.SetupLocalhostConnections(path)
-			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
-			// manually creating channel prevents next sequence from being set
-			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetChannel(
-				suite.chainA.GetContext(),
-				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
-				types.NewChannel(types.OPEN, types.ORDERED, types.NewCounterparty(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID), []string{path.EndpointA.ConnectionID}, path.EndpointA.ChannelConfig.Version),
-			)
-			suite.chainA.CreateChannelCapability(suite.chainA.GetSimApp().ScopedIBCMockKeeper, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
-			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
-		}, false},
 		{"next sequence wrong", func() {
+			expError = types.ErrInvalidPacket
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetNextSequenceSend(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, 5)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"channel capability not found", func() {
+			expError = types.ErrChannelCapabilityNotFound
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			channelCap = capabilitytypes.NewCapability(5)
@@ -997,6 +1000,7 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s, %d/%d tests", tc.msg, i, len(testCases)), func() {
 			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
@@ -1007,6 +1011,10 @@ func (suite *KeeperTestSuite) TestLocalhostSendPacket() {
 				suite.Require().NoError(err)
 			} else {
 				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}
@@ -1198,6 +1206,8 @@ func (suite *KeeperTestSuite) TestLocalhostRecvPacket() {
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, false},
 		{"validation failed", func() {
+			expError = types.ErrPacketCommitmentNotFound
+
 			// packet commitment not set resulting in failed packet verification
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
@@ -1250,20 +1260,19 @@ func (suite *KeeperTestSuite) TestLocalhostWriteAcknowledgement() {
 		ack        exported.Acknowledgement
 		packet     exported.PacketI
 		channelCap *capabilitytypes.Capability
+		expError   error
 	)
 
 	testCases := []testCase{
-		{
-			"success",
-			func() {
-				suite.coordinator.SetupLocalhost(path)
-				packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
-				ack = ibcmock.MockAcknowledgement
-				channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
-			},
-			true,
-		},
+		{"success", func() {
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			ack = ibcmock.MockAcknowledgement
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, true},
 		{"channel not found", func() {
+			expError = types.ErrChannelNotFound
+
 			// use wrong channel naming
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, ibctesting.InvalidID, ibctesting.InvalidID, timeoutHeight, disabledTimeoutTimestamp)
@@ -1271,6 +1280,7 @@ func (suite *KeeperTestSuite) TestLocalhostWriteAcknowledgement() {
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, false},
 		{"channel not open", func() {
+			expError = types.ErrInvalidChannelState
 			suite.coordinator.SetupLocalhost(path)
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
 			ack = ibcmock.MockAcknowledgement
@@ -1282,52 +1292,41 @@ func (suite *KeeperTestSuite) TestLocalhostWriteAcknowledgement() {
 
 			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
 		}, false},
-		{
-			"capability authentication failed",
-			func() {
-				suite.coordinator.SetupLocalhost(path)
-				packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
-				ack = ibcmock.MockAcknowledgement
-				channelCap = capabilitytypes.NewCapability(3)
-			},
-			false,
-		},
-		{
-			"no-op, already acked",
-			func() {
-				suite.coordinator.SetupLocalhost(path)
-				packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
-				ack = ibcmock.MockAcknowledgement
-				suite.chainB.App.GetIBCKeeper().ChannelKeeper.SetPacketAcknowledgement(suite.chainB.GetContext(), packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence(), ack.Acknowledgement())
-				channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
-			},
-			false,
-		},
-		{
-			"empty acknowledgement",
-			func() {
-				suite.coordinator.SetupLocalhost(path)
-				packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
-				ack = ibcmock.NewEmptyAcknowledgement()
-				channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
-			},
-			false,
-		},
-		{
-			"acknowledgement is nil",
-			func() {
-				suite.coordinator.SetupLocalhost(path)
-				packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
-				ack = nil
-				channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
-			},
-			false,
-		},
+		{"capability authentication failed", func() {
+			expError = types.ErrInvalidChannelCapability
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			ack = ibcmock.MockAcknowledgement
+			channelCap = capabilitytypes.NewCapability(3)
+		}, false},
+		{"no-op, already acked", func() {
+			expError = types.ErrAcknowledgementExists
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			ack = ibcmock.MockAcknowledgement
+			suite.chainB.App.GetIBCKeeper().ChannelKeeper.SetPacketAcknowledgement(suite.chainB.GetContext(), packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence(), ack.Acknowledgement())
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, false},
+		{"empty acknowledgement", func() {
+			expError = types.ErrInvalidAcknowledgement
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			ack = ibcmock.NewEmptyAcknowledgement()
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, false},
+		{"acknowledgement is nil", func() {
+			expError = types.ErrInvalidAcknowledgement
+			suite.coordinator.SetupLocalhost(path)
+			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			ack = nil
+			channelCap = suite.chainB.GetChannelCapability(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+		}, false},
 	}
 	for i, tc := range testCases {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s, %d/%d tests", tc.msg, i, len(testCases)), func() {
 			suite.SetupLocalhostTest() // reset
+			expError = nil             // must be explicitly changed by failed cases
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
@@ -1338,6 +1337,10 @@ func (suite *KeeperTestSuite) TestLocalhostWriteAcknowledgement() {
 				suite.Require().NoError(err)
 			} else {
 				suite.Require().Error(err)
+				// only check if expError is set, since not all error codes can be known
+				if expError != nil {
+					suite.Require().True(errors.Is(err, expError))
+				}
 			}
 		})
 	}
@@ -1488,7 +1491,7 @@ func (suite *KeeperTestSuite) TestLocalhostAcknowledgePacket() {
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
 		{"packet ack verification failed", func() {
-			// skip error code check since error occurs in light-clients
+			expError = types.ErrInvalidAcknowledgement
 
 			// ack never written
 			suite.coordinator.SetupLocalhost(path)
@@ -1565,7 +1568,7 @@ func (suite *KeeperTestSuite) TestLocalhostAcknowledgePacket() {
 		tc := tc
 		suite.Run(fmt.Sprintf("Case %s, %d/%d tests", tc.msg, i, len(testCases)), func() {
 			suite.SetupLocalhostTest() // reset
-			expError = nil             // must explcitly set error for failed cases
+			expError = nil             // must explicitly set error for failed cases
 			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
 			tc.malleate()
