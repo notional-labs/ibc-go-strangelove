@@ -127,10 +127,10 @@ func (k Keeper) ChanOpenTry(
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in INIT state
 		if !ok {
-			return "", nil, fmt.Errorf("failed localhost channel state verification, counterparty channel does not exist")
+			return "", nil, sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
 		}
 		if storedChannel.State != types.INIT {
-			return "", nil, fmt.Errorf("failed localhost channel state verification, channel state is not INIT (got %s)", storedChannel.State)
+			return "", nil, sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not INIT (got %s)", storedChannel.State)
 		}
 	} else {
 		// GetConnection call takes place in this else block because it will fail on localhost connections
@@ -257,10 +257,10 @@ func (k Keeper) ChanOpenAck(
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in TRYOPEN state
 		if !ok {
-			return fmt.Errorf("failed localhost channel state verification, counterparty channel does not exist")
+			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
 		}
 		if storedChannel.State != types.TRYOPEN {
-			return fmt.Errorf("failed localhost channel state verification, channel state is not TRYOPEN (got %s)", storedChannel.State)
+			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not TRYOPEN (got %s)", storedChannel.State)
 		}
 	} else {
 		// GetConnection call takes place in this else block because it will fail on localhost connections
@@ -360,10 +360,10 @@ func (k Keeper) ChanOpenConfirm(
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in OPEN state
 		if !ok {
-			return fmt.Errorf("failed localhost channel state verification, counterparty channel does not exist")
+			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
 		}
 		if storedChannel.State != types.OPEN {
-			return fmt.Errorf("failed localhost channel state verification, channel state is not OPEN (got %s)", storedChannel.State)
+			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not OPEN (got %s)", storedChannel.State)
 		}
 	} else {
 		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
@@ -504,10 +504,10 @@ func (k Keeper) ChanCloseConfirm(
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in CLOSED state
 		if !ok {
-			return fmt.Errorf("failed localhost channel state verification, counterparty channel does not exist")
+			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
 		}
 		if storedChannel.State != types.CLOSED {
-			return fmt.Errorf("failed localhost channel state verification, channel state is not CLOSED (got %s)", storedChannel.State)
+			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not CLOSED (got %s)", storedChannel.State)
 		}
 	} else {
 		// GetConnection call takes place in this else block because it will fail on localhost connections

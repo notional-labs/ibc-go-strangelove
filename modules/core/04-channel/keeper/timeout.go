@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -101,16 +100,16 @@ func (k Keeper) TimeoutPacket(
 
 			expectedNextSeq, ok := k.GetNextSequenceRecv(ctx, packet.GetDestPort(), packet.GetDestChannel())
 			if !ok {
-				return fmt.Errorf("failed localhost next sequence receive verification, next sequence receive does not exist in store")
+				return sdkerrors.Wrap(types.ErrSequenceReceiveNotFound, "failed localhost next sequence receive verification, next sequence receive does not exist in store")
 			}
 			// check that the recv sequence is as claimed
 			if nextSequenceRecv != expectedNextSeq {
-				return fmt.Errorf("failed localhost next sequence receive verification, (%d ≠ %d)", expectedNextSeq, nextSequenceRecv)
+				return sdkerrors.Wrapf(types.ErrPacketSequenceOutOfOrder, "failed localhost next sequence receive verification, (%d ≠ %d)", expectedNextSeq, nextSequenceRecv)
 			}
 		case types.UNORDERED:
 			_, ok := k.GetPacketReceipt(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
 			if ok {
-				return fmt.Errorf("failed localhost packet receipt absence verification")
+				return sdkerrors.Wrap(types.ErrAcknowledgementExists, "failed localhost packet receipt absence verification")
 			}
 		default:
 			panic(sdkerrors.Wrapf(types.ErrInvalidChannelOrdering, channel.Ordering.String()))
@@ -310,7 +309,7 @@ func (k Keeper) TimeoutOnClose(
 		}
 
 		if counterpartyChan.State != types.CLOSED {
-			return fmt.Errorf("failed localhost timeout verification, counterparty channel state is not CLOSED (got %s)", counterpartyChan.State)
+			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost timeout verification, counterparty channel state is not CLOSED (got %s)", counterpartyChan.State)
 		}
 
 		switch channel.Ordering {
@@ -325,16 +324,16 @@ func (k Keeper) TimeoutOnClose(
 
 			expectedNextSeq, ok := k.GetNextSequenceRecv(ctx, packet.GetDestPort(), packet.GetDestChannel())
 			if !ok {
-				return fmt.Errorf("failed localhost next sequence receive verification, next sequence receive does not exist in store")
+				return sdkerrors.Wrap(types.ErrSequenceReceiveNotFound, "failed localhost next sequence receive verification, next sequence receive does not exist in store")
 			}
 			// check that the recv sequence is as claimed
 			if nextSequenceRecv != expectedNextSeq {
-				return fmt.Errorf("failed localhost next sequence receive verification, (%d ≠ %d)", expectedNextSeq, nextSequenceRecv)
+				return sdkerrors.Wrapf(types.ErrPacketSequenceOutOfOrder, "failed localhost next sequence receive verification, (%d ≠ %d)", expectedNextSeq, nextSequenceRecv)
 			}
 		case types.UNORDERED:
 			_, ok := k.GetPacketReceipt(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
 			if ok {
-				return fmt.Errorf("failed localhost packet receipt absence verification")
+				return sdkerrors.Wrapf(types.ErrAcknowledgementExists, "failed localhost packet receipt absence verification")
 			}
 		default:
 			panic(sdkerrors.Wrapf(types.ErrInvalidChannelOrdering, channel.Ordering.String()))

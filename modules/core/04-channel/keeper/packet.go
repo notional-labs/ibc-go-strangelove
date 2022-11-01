@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -229,10 +228,10 @@ func (k Keeper) RecvPacket(
 
 		// check that the packet commitment actually exists in this chain's channelKeeper store
 		if len(storedCommitment) == 0 {
-			return fmt.Errorf("couldn't verify localhost packet commitment, commitment does not exist")
+			return sdkerrors.Wrap(types.ErrPacketCommitmentNotFound, "couldn't verify localhost packet commitment, commitment does not exist")
 		}
 		if !bytes.Equal(storedCommitment, commitment) {
-			return fmt.Errorf("couldn't verify localhost packet commitment (%s ≠ %s)", storedCommitment, commitment)
+			return sdkerrors.Wrapf(types.ErrInvalidPacket, "couldn't verify localhost packet commitment (%s ≠ %s)", storedCommitment, commitment)
 		}
 
 	} else {
@@ -487,12 +486,12 @@ func (k Keeper) AcknowledgePacket(
 
 		// check that the packet acknowledgement actually exists in this chain's channelKeeper store
 		if !ok {
-			return fmt.Errorf("couldn't verify localhost acknowledgement, acknowledgement does not exist")
+			return sdkerrors.Wrap(types.ErrInvalidAcknowledgement, "couldn't verify localhost acknowledgement, acknowledgement does not exist")
 		}
 
 		expectedAck := types.CommitAcknowledgement(acknowledgement)
 		if !bytes.Equal(expectedAck, storedAck) {
-			return fmt.Errorf("couldn't verify localhost acknowledgement (%s ≠ %s)", expectedAck, storedAck)
+			return sdkerrors.Wrapf(types.ErrInvalidAcknowledgement, "couldn't verify localhost acknowledgement (%s ≠ %s)", expectedAck, storedAck)
 		}
 	} else {
 		// GetConnection call takes place in this else block because it will fail on localhost connections
