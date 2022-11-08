@@ -3,7 +3,7 @@ package keeper_test
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/cosmos/ibc-go/v5/modules/apps/icq/types"
+	"github.com/cosmos/ibc-go/v5/modules/apps/32-icq/types"
 )
 
 func (suite *KeeperTestSuite) TestQueryParams() {

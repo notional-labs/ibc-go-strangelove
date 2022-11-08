@@ -1,7 +1,7 @@
 package keeper_test
 
 import (
-	"github.com/cosmos/ibc-go/v5/modules/apps/icq/types"
+	"github.com/cosmos/ibc-go/v5/modules/apps/32-icq/types"
 )
 
 func (suite *KeeperTestSuite) TestInitGenesis() {

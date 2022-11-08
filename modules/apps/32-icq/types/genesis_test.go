@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/cosmos/ibc-go/v5/modules/apps/icq/types"
+	"github.com/cosmos/ibc-go/v5/modules/apps/32-icq/types"
 	ibctesting "github.com/cosmos/ibc-go/v5/testing"
 )
 
