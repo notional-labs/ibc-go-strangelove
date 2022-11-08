@@ -1,6 +1,6 @@
 package types_test
 
-import "github.com/cosmos/ibc-go/v6/modules/apps/icq/types"
+import "github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
 
 func (suite *TypesTestSuite) TestContainsQueryPath() {
 	allowQueries := []string{

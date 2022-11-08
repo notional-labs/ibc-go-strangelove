@@ -3,7 +3,7 @@ package keeper
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	icqtypes "github.com/cosmos/ibc-go/v6/modules/apps/icq/types"
+	icqtypes "github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
 	"github.com/cosmos/ibc-go/v6/modules/core/exported"
 )
 

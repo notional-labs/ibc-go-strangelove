@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/cosmos/ibc-go/v6/modules/apps/icq/types"
+	"github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
 	channeltypes "github.com/cosmos/ibc-go/v6/modules/core/04-channel/types"
 	ibctesting "github.com/cosmos/ibc-go/v6/testing"
 )

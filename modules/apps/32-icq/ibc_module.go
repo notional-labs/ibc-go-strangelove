@@ -7,8 +7,8 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
 
-	"github.com/cosmos/ibc-go/v6/modules/apps/icq/keeper"
-	"github.com/cosmos/ibc-go/v6/modules/apps/icq/types"
+	"github.com/cosmos/ibc-go/v6/modules/apps/32-icq/keeper"
+	"github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
 	channeltypes "github.com/cosmos/ibc-go/v6/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v6/modules/core/24-host"
 	ibcexported "github.com/cosmos/ibc-go/v6/modules/core/exported"
