@@ -9,7 +9,7 @@ Learn about what the ICQ module is, and how to send queries to modules on other 
 
 ## What is the ICQ (Interchain Query) module?
 
-ICQ is a protocol which enables the Cosmos-SDK IBC enabled modules to query other modules data/endpoints on other chains and receive the response of their query.
+ICQ uses the [ICS-32](https://github.com/strangelove-ventures/ibc/tree/icq_implementation/spec/app/ics-32-interchain-queries) protocol which enables Cosmos-SDK IBC enabled modules to query other modules data/endpoints on other chains and receive the response of their query.
 
 ## Concepts 
 
