@@ -11,8 +11,8 @@ import (
 	tmprotostate "github.com/tendermint/tendermint/proto/tendermint/state"
 	tmstate "github.com/tendermint/tendermint/state"
 
-	"github.com/cosmos/ibc-go/v6/modules/apps/icq"
-	"github.com/cosmos/ibc-go/v6/modules/apps/icq/types"
+	icq "github.com/cosmos/ibc-go/v6/modules/apps/32-icq"
+	"github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
 	clienttypes "github.com/cosmos/ibc-go/v6/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v6/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v6/modules/core/24-host"
