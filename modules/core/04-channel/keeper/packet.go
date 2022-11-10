@@ -10,7 +10,6 @@ import (
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v5/modules/core/02-client/types"
-	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
 	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
@@ -58,66 +57,10 @@ func (k Keeper) SendPacket(
 		)
 	}
 
-	// TODO need to check if localhost connections are enabled for this chain
-	// check if the packet verification should be handled on the localhost
-	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		// check if packet is timed out
-		latestHeight := uint64(ctx.BlockHeight())
-		timeoutHeight := packet.GetTimeoutHeight()
-		if !timeoutHeight.IsZero() && latestHeight >= timeoutHeight.GetRevisionHeight() {
-			return sdkerrors.Wrapf(
-				types.ErrPacketTimeout,
-				"receiving chain block height >= packet timeout height (%d >= %s)", latestHeight, timeoutHeight,
-			)
-		}
-
-		latestTimestamp := uint64(ctx.BlockTime().UnixNano())
-		if packet.GetTimeoutTimestamp() != 0 && latestTimestamp >= packet.GetTimeoutTimestamp() {
-			return sdkerrors.Wrapf(
-				types.ErrPacketTimeout,
-				"receiving chain block timestamp >= packet timeout timestamp (%s >= %s)", time.Unix(0, int64(latestTimestamp)), time.Unix(0, int64(packet.GetTimeoutTimestamp())),
-			)
-		}
-	} else {
-		// GetConnection call takes place in this else block because it will fail on localhost connections
-		// due to the connection not actually existing in state.
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-		if !found {
-			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-		}
-
-		clientState, found := k.clientKeeper.GetClientState(ctx, connectionEnd.GetClientID())
-		if !found {
-			return clienttypes.ErrConsensusStateNotFound
-		}
-
-		// prevent accidental sends with clients that cannot be updated
-		clientStore := k.clientKeeper.ClientStore(ctx, connectionEnd.GetClientID())
-		if status := clientState.Status(ctx, clientStore, k.cdc); status != exported.Active {
-			return sdkerrors.Wrapf(clienttypes.ErrClientNotActive, "cannot send packet using client (%s) with status %s", connectionEnd.GetClientID(), status)
-		}
-
-		// check if packet is timed out on the receiving chain
-		latestHeight := clientState.GetLatestHeight()
-		timeoutHeight := packet.GetTimeoutHeight()
-		if !timeoutHeight.IsZero() && latestHeight.GTE(timeoutHeight) {
-			return sdkerrors.Wrapf(
-				types.ErrPacketTimeout,
-				"receiving chain block height >= packet timeout height (%s >= %s)", latestHeight, timeoutHeight,
-			)
-		}
-
-		latestTimestamp, err := k.connectionKeeper.GetTimestampAtHeight(ctx, connectionEnd, latestHeight)
-		if err != nil {
-			return err
-		}
-
-		if packet.GetTimeoutTimestamp() != 0 && latestTimestamp >= packet.GetTimeoutTimestamp() {
-			return sdkerrors.Wrapf(
-				types.ErrPacketTimeout,
-				"receiving chain block timestamp >= packet timeout timestamp (%s >= %s)", time.Unix(0, int64(latestTimestamp)), time.Unix(0, int64(packet.GetTimeoutTimestamp())),
-			)
-		}
+	// perform packet send verification
+	err := k.verifyPacketSend(ctx, channel.ConnectionHops[0], packet)
+	if err != nil {
+		return err
 	}
 
 	nextSequenceSend, found := k.GetNextSequenceSend(ctx, packet.GetSourcePort(), packet.GetSourceChannel())
@@ -220,47 +163,10 @@ func (k Keeper) RecvPacket(
 
 	commitment := types.CommitPacket(k.cdc, packet)
 
-	// check if the packet commitment verification should be handled on the localhost
-	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		// get the desired state directly from this chain's channelKeeper
-		storedCommitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-		// check that the packet commitment actually exists in this chain's channelKeeper store
-		if len(storedCommitment) == 0 {
-			return sdkerrors.Wrap(types.ErrPacketCommitmentNotFound, "couldn't verify localhost packet commitment, commitment does not exist")
-		}
-		if !bytes.Equal(storedCommitment, commitment) {
-			return sdkerrors.Wrapf(types.ErrInvalidPacket, "couldn't verify localhost packet commitment (%s ≠ %s)", storedCommitment, commitment)
-		}
-
-	} else {
-		// GetConnection call takes place in this else block because it will fail on localhost connections
-		// due to the connection not actually existing in state.
-
-		// Connection must be OPEN to receive a packet. It is possible for connection to not yet be open if packet was
-		// sent optimistically before connection and channel handshake completed. However, to receive a packet,
-		// connection and channel must both be open
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-		if !found {
-			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-		}
-
-		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-			return sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidConnectionState,
-				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-			)
-		}
-
-		// verify that the counterparty did commit to sending this packet
-		if err := k.connectionKeeper.VerifyPacketCommitment(
-			ctx, connectionEnd, proofHeight, proof,
-			packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence(),
-			commitment,
-		); err != nil {
-			return sdkerrors.Wrap(err, "couldn't verify counterparty packet commitment")
-		}
+	// perform packet commitment verification
+	err := k.verifyPacketCommitment(ctx, channel.ConnectionHops[0], packet, commitment, proof, proofHeight)
+	if err != nil {
+		return err
 	}
 
 	switch channel.Ordering {
@@ -460,78 +366,28 @@ func (k Keeper) AcknowledgePacket(
 		)
 	}
 
-	// check if the packet acknowledgement verification should be handled on the localhost
-	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+	commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
 
-		if len(commitment) == 0 {
-			EmitAcknowledgePacketEvent(ctx, packet, channel)
-			// This error indicates that the acknowledgement has already been relayed
-			// or there is a misconfigured relayer attempting to prove an acknowledgement
-			// for a packet never sent. Core IBC will treat this error as a no-op in order to
-			// prevent an entire relay transaction from failing and consuming unnecessary fees.
-			return types.ErrNoOpMsg
-		}
+	if len(commitment) == 0 {
+		EmitAcknowledgePacketEvent(ctx, packet, channel)
+		// This error indicates that the acknowledgement has already been relayed
+		// or there is a misconfigured relayer attempting to prove an acknowledgement
+		// for a packet never sent. Core IBC will treat this error as a no-op in order to
+		// prevent an entire relay transaction from failing and consuming unnecessary fees.
+		return types.ErrNoOpMsg
+	}
 
-		packetCommitment := types.CommitPacket(k.cdc, packet)
+	packetCommitment := types.CommitPacket(k.cdc, packet)
 
-		// verify we sent the packet and haven't cleared it out yet
-		if !bytes.Equal(commitment, packetCommitment) {
-			return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
-		}
+	// verify we sent the packet and haven't cleared it out yet
+	if !bytes.Equal(commitment, packetCommitment) {
+		return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
+	}
 
-		// get the desired state directly from this chain's channelKeeper
-		storedAck, ok := k.GetPacketAcknowledgement(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
-
-		// check that the packet acknowledgement actually exists in this chain's channelKeeper store
-		if !ok {
-			return sdkerrors.Wrap(types.ErrInvalidAcknowledgement, "couldn't verify localhost acknowledgement, acknowledgement does not exist")
-		}
-
-		expectedAck := types.CommitAcknowledgement(acknowledgement)
-		if !bytes.Equal(expectedAck, storedAck) {
-			return sdkerrors.Wrapf(types.ErrInvalidAcknowledgement, "couldn't verify localhost acknowledgement (%s ≠ %s)", expectedAck, storedAck)
-		}
-	} else {
-		// GetConnection call takes place in this else block because it will fail on localhost connections
-		// due to the connection not actually existing in state.
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-		if !found {
-			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-		}
-
-		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-			return sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidConnectionState,
-				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-			)
-		}
-
-		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-		if len(commitment) == 0 {
-			EmitAcknowledgePacketEvent(ctx, packet, channel)
-			// This error indicates that the acknowledgement has already been relayed
-			// or there is a misconfigured relayer attempting to prove an acknowledgement
-			// for a packet never sent. Core IBC will treat this error as a no-op in order to
-			// prevent an entire relay transaction from failing and consuming unnecessary fees.
-			return types.ErrNoOpMsg
-		}
-
-		packetCommitment := types.CommitPacket(k.cdc, packet)
-
-		// verify we sent the packet and haven't cleared it out yet
-		if !bytes.Equal(commitment, packetCommitment) {
-			return sdkerrors.Wrapf(types.ErrInvalidPacket, "commitment bytes are not equal: got (%v), expected (%v)", packetCommitment, commitment)
-		}
-
-		if err := k.connectionKeeper.VerifyPacketAcknowledgement(
-			ctx, connectionEnd, proofHeight, proof, packet.GetDestPort(), packet.GetDestChannel(),
-			packet.GetSequence(), acknowledgement,
-		); err != nil {
-			return err
-		}
+	// perform packet acknowledgement verification
+	err := k.verifyPacketAcknowledgement(ctx, channel.ConnectionHops[0], packet, acknowledgement, proof, proofHeight)
+	if err != nil {
+		return err
 	}
 
 	// assert packets acknowledged in order

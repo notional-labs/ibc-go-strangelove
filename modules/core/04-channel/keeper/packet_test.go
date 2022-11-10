@@ -741,7 +741,19 @@ func (suite *KeeperTestSuite) TestAcknowledgePacket() {
 				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
 				types.NewChannel(types.OPEN, types.ORDERED, types.NewCounterparty(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID), []string{"connection-1000"}, path.EndpointA.ChannelConfig.Version),
 			)
+
+			// create packet commitment
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			commitment := types.CommitPacket(suite.chainA.GetSimApp().AppCodec(), packet)
+
+			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetPacketCommitment(
+				suite.chainA.GetContext(),
+				path.EndpointA.ChannelConfig.PortID,
+				path.EndpointA.ChannelID,
+				packet.Sequence,
+				commitment,
+			)
+
 			suite.chainA.CreateChannelCapability(suite.chainA.GetSimApp().ScopedIBCMockKeeper, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
@@ -758,7 +770,19 @@ func (suite *KeeperTestSuite) TestAcknowledgePacket() {
 				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
 				types.NewChannel(types.OPEN, types.ORDERED, types.NewCounterparty(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID), []string{path.EndpointA.ConnectionID}, path.EndpointA.ChannelConfig.Version),
 			)
+
+			// create packet commitment
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			commitment := types.CommitPacket(suite.chainA.GetSimApp().AppCodec(), packet)
+
+			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetPacketCommitment(
+				suite.chainA.GetContext(),
+				path.EndpointA.ChannelConfig.PortID,
+				path.EndpointA.ChannelID,
+				packet.Sequence,
+				commitment,
+			)
+
 			suite.chainA.CreateChannelCapability(suite.chainA.GetSimApp().ScopedIBCMockKeeper, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 			channelCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},

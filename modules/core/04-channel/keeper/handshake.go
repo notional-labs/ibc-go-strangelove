@@ -119,75 +119,24 @@ func (k Keeper) ChanOpenTry(
 		return "", nil, sdkerrors.Wrapf(porttypes.ErrInvalidPort, "caller does not own port capability for port ID %s", portID)
 	}
 
-	// check if the channel state verification should be handled on the localhost
-	// TODO need to check if localhost connections are enabled for this chain
-	if connectionHops[0] == connectiontypes.LocalhostID {
-		// get the counterparty channel directly from this chain's channelKeeper store
-		storedChannel, ok := k.GetChannel(ctx, counterparty.PortId, counterparty.ChannelId)
-
-		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in INIT state
-		if !ok {
-			return "", nil, sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
-		}
-		if storedChannel.State != types.INIT {
-			return "", nil, sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not INIT (got %s)", storedChannel.State)
-		}
-	} else {
-		// GetConnection call takes place in this else block because it will fail on localhost connections
-		// due to the connection not actually existing in state.
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
-		if !found {
-			return "", nil, sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionHops[0])
-		}
-
-		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-			return "", nil, sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidConnectionState,
-				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-			)
-		}
-
-		getVersions := connectionEnd.GetVersions()
-		if len(getVersions) != 1 {
-			return "", nil, sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidVersion,
-				"single version must be negotiated on connection before opening channel, got: %v",
-				getVersions,
-			)
-		}
-
-		if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
-			return "", nil, sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidVersion,
-				"connection version %s does not support channel ordering: %s",
-				getVersions[0], order.String(),
-			)
-		}
-
-		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
-
-		// expectedCounterpaty is the counterparty of the counterparty's channel end
-		// (i.e self)
-		expectedCounterparty := types.NewCounterparty(portID, "")
-		expectedChannel := types.NewChannel(
-			types.INIT, order, expectedCounterparty,
-			counterpartyHops, counterpartyVersion,
-		)
-
-		if err := k.connectionKeeper.VerifyChannelState(
-			ctx, connectionEnd, proofHeight, proofInit,
-			counterparty.PortId, counterparty.ChannelId, expectedChannel,
-		); err != nil {
-			return "", nil, err
-		}
+	// initialize the channel state verification options then perform channel state verification
+	opts := channelStateOpts{
+		order:               order,
+		expectedState:       types.INIT,
+		counterpartyVersion: counterpartyVersion,
+		portID:              portID,
+		counterpartyPortID:  counterparty.PortId,
+		counterpartyChanID:  counterparty.ChannelId,
+		proofHeight:         proofHeight,
+		proof:               proofInit,
 	}
 
-	var (
-		capKey *capabilitytypes.Capability
-		err    error
-	)
+	err := k.verifyChannelState(ctx, connectionHops[0], opts)
+	if err != nil {
+		return "", nil, err
+	}
 
-	capKey, err = k.scopedKeeper.NewCapability(ctx, host.ChannelCapabilityPath(portID, channelID))
+	capKey, err := k.scopedKeeper.NewCapability(ctx, host.ChannelCapabilityPath(portID, channelID))
 	if err != nil {
 		return "", nil, sdkerrors.Wrapf(err, "could not create channel capability for port ID %s and channel ID %s", portID, channelID)
 	}
@@ -249,50 +198,22 @@ func (k Keeper) ChanOpenAck(
 		return sdkerrors.Wrapf(types.ErrChannelCapabilityNotFound, "caller does not own capability for channel, port ID (%s) channel ID (%s)", portID, channelID)
 	}
 
-	// check if the channel state verification should be handled on the localhost
-	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		// get the counterparty channel directly from this chain's channelKeeper store
-		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, counterpartyChannelID)
+	// initialize the channel state verification options then perform channel state verification
+	opts := channelStateOpts{
+		order:               channel.Ordering,
+		expectedState:       types.TRYOPEN,
+		counterpartyVersion: counterpartyVersion,
+		portID:              portID,
+		channelID:           channelID,
+		counterpartyPortID:  channel.Counterparty.PortId,
+		counterpartyChanID:  counterpartyChannelID,
+		proofHeight:         proofHeight,
+		proof:               proofTry,
+	}
 
-		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in TRYOPEN state
-		if !ok {
-			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
-		}
-		if storedChannel.State != types.TRYOPEN {
-			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not TRYOPEN (got %s)", storedChannel.State)
-		}
-	} else {
-		// GetConnection call takes place in this else block because it will fail on localhost connections
-		// due to the connection not actually existing in state.
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-		if !found {
-			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-		}
-
-		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-			return sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidConnectionState,
-				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-			)
-		}
-
-		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
-
-		// counterparty of the counterparty channel end (i.e self)
-		expectedCounterparty := types.NewCounterparty(portID, channelID)
-		expectedChannel := types.NewChannel(
-			types.TRYOPEN, channel.Ordering, expectedCounterparty,
-			counterpartyHops, counterpartyVersion,
-		)
-
-		if err := k.connectionKeeper.VerifyChannelState(
-			ctx, connectionEnd, proofHeight, proofTry,
-			channel.Counterparty.PortId, counterpartyChannelID,
-			expectedChannel,
-		); err != nil {
-			return err
-		}
+	err := k.verifyChannelState(ctx, channel.ConnectionHops[0], opts)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -352,47 +273,22 @@ func (k Keeper) ChanOpenConfirm(
 		return sdkerrors.Wrapf(types.ErrChannelCapabilityNotFound, "caller does not own capability for channel, port ID (%s) channel ID (%s)", portID, channelID)
 	}
 
-	// check if the channel state verification should be handled on the localhost
-	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		// get the counterparty channel directly from this chain's channelKeeper store
-		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
+	// initialize the channel state verification options then perform channel state verification
+	opts := channelStateOpts{
+		order:               channel.Ordering,
+		expectedState:       types.OPEN,
+		counterpartyVersion: channel.Version,
+		portID:              portID,
+		channelID:           channelID,
+		counterpartyPortID:  channel.Counterparty.PortId,
+		counterpartyChanID:  channel.Counterparty.ChannelId,
+		proofHeight:         proofHeight,
+		proof:               proofAck,
+	}
 
-		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in OPEN state
-		if !ok {
-			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
-		}
-		if storedChannel.State != types.OPEN {
-			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not OPEN (got %s)", storedChannel.State)
-		}
-	} else {
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-		if !found {
-			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-		}
-
-		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-			return sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidConnectionState,
-				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-			)
-		}
-
-		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
-
-		counterparty := types.NewCounterparty(portID, channelID)
-		expectedChannel := types.NewChannel(
-			types.OPEN, channel.Ordering, counterparty,
-			counterpartyHops, channel.Version,
-		)
-
-		if err := k.connectionKeeper.VerifyChannelState(
-			ctx, connectionEnd, proofHeight, proofAck,
-			channel.Counterparty.PortId, channel.Counterparty.ChannelId,
-			expectedChannel,
-		); err != nil {
-			return err
-		}
+	err := k.verifyChannelState(ctx, channel.ConnectionHops[0], opts)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -496,49 +392,22 @@ func (k Keeper) ChanCloseConfirm(
 		return sdkerrors.Wrap(types.ErrInvalidChannelState, "channel is already CLOSED")
 	}
 
-	// check if the channel state verification should be handled on the localhost
-	// TODO need to check if localhost connections are enabled for this chain
-	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		// get the counterparty channel directly from this chain's channelKeeper store
-		storedChannel, ok := k.GetChannel(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId)
+	// initialize the channel state verification options then perform channel state verification
+	opts := channelStateOpts{
+		order:               channel.Ordering,
+		expectedState:       types.CLOSED,
+		counterpartyVersion: channel.Version,
+		portID:              portID,
+		channelID:           channelID,
+		counterpartyPortID:  channel.Counterparty.PortId,
+		counterpartyChanID:  channel.Counterparty.ChannelId,
+		proofHeight:         proofHeight,
+		proof:               proofInit,
+	}
 
-		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in CLOSED state
-		if !ok {
-			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
-		}
-		if storedChannel.State != types.CLOSED {
-			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not CLOSED (got %s)", storedChannel.State)
-		}
-	} else {
-		// GetConnection call takes place in this else block because it will fail on localhost connections
-		// due to the connection not actually existing in state.
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-		if !found {
-			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-		}
-
-		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-			return sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidConnectionState,
-				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-			)
-		}
-
-		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
-
-		counterparty := types.NewCounterparty(portID, channelID)
-		expectedChannel := types.NewChannel(
-			types.CLOSED, channel.Ordering, counterparty,
-			counterpartyHops, channel.Version,
-		)
-
-		if err := k.connectionKeeper.VerifyChannelState(
-			ctx, connectionEnd, proofHeight, proofInit,
-			channel.Counterparty.PortId, channel.Counterparty.ChannelId,
-			expectedChannel,
-		); err != nil {
-			return err
-		}
+	err := k.verifyChannelState(ctx, channel.ConnectionHops[0], opts)
+	if err != nil {
+		return err
 	}
 
 	k.Logger(ctx).Info("channel state updated", "port-id", portID, "channel-id", channelID, "previous-state", channel.State.String(), "new-state", "CLOSED")
