@@ -877,6 +877,22 @@ func (suite *KeeperTestSuite) TestLocalhostChanOpenTry() {
 			suite.chainB.CreatePortCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
 			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
 		}, true},
+		{"channel ids are not equal", func() {
+			suite.coordinator.SetupLocalhostConnections(path)
+			path.SetChannelUnordered()
+
+			err := path.EndpointA.ChanOpenInit()
+			suite.Require().NoError(err)
+
+			err = path.EndpointB.LocalhostChanOpenTry()
+			suite.Require().NoError(err)
+
+			// ensure that both channel ends end up with different ids after ChanOpenTry
+			suite.Require().NotEqual(path.EndpointA.ChannelID, path.EndpointB.ChannelID)
+
+			suite.chainB.CreatePortCapability(suite.chainB.GetSimApp().ScopedIBCMockKeeper, ibctesting.MockPort)
+			portCap = suite.chainB.GetPortCapability(ibctesting.MockPort)
+		}, true},
 		{"localhost channel verification failed", func() {
 			expError = types.ErrChannelNotFound
 			// the channel for EndpointA does not exist in state
