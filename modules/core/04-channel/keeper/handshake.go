@@ -27,29 +27,9 @@ func (k Keeper) ChanOpenInit(
 	counterparty types.Counterparty,
 	version string,
 ) (string, *capabilitytypes.Capability, error) {
-	if connectionHops[0] != connectiontypes.LocalhostID {
-		// connection hop length checked on msg.ValidateBasic()
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionHops[0])
-		if !found {
-			return "", nil, sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionHops[0])
-		}
-
-		getVersions := connectionEnd.GetVersions()
-		if len(getVersions) != 1 {
-			return "", nil, sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidVersion,
-				"single version must be negotiated on connection before opening channel, got: %v",
-				getVersions,
-			)
-		}
-
-		if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
-			return "", nil, sdkerrors.Wrapf(
-				connectiontypes.ErrInvalidVersion,
-				"connection version %s does not support channel ordering: %s",
-				getVersions[0], order.String(),
-			)
-		}
+	err := k.validateChanOpenInit(ctx, connectionHops[0], order)
+	if err != nil {
+		return "", nil, err
 	}
 
 	if !k.portKeeper.Authenticate(ctx, portCap, portID) {
@@ -119,19 +99,20 @@ func (k Keeper) ChanOpenTry(
 		return "", nil, sdkerrors.Wrapf(porttypes.ErrInvalidPort, "caller does not own port capability for port ID %s", portID)
 	}
 
-	// initialize the channel state verification options then perform channel state verification
-	opts := channelStateOpts{
-		order:               order,
-		expectedState:       types.INIT,
-		counterpartyVersion: counterpartyVersion,
-		portID:              portID,
-		counterpartyPortID:  counterparty.PortId,
-		counterpartyChanID:  counterparty.ChannelId,
-		proofHeight:         proofHeight,
-		proof:               proofInit,
+	// expected channel is the channel on the counterparty
+	expectedChannel := types.Channel{
+		State:    types.INIT,
+		Ordering: order,
+		Counterparty: types.Counterparty{
+			PortId:    portID,
+			ChannelId: "", // the channel id on this end does not exist in state yet, so we leave this field blank
+		},
+		ConnectionHops: connectionHops,
+		Version:        counterpartyVersion,
 	}
 
-	err := k.verifyChannelState(ctx, connectionHops[0], opts)
+	// perform channel state verification
+	err := k.verifyChannelState(ctx, expectedChannel, counterparty.PortId, counterparty.ChannelId, proofHeight, proofInit)
 	if err != nil {
 		return "", nil, err
 	}
@@ -198,20 +179,20 @@ func (k Keeper) ChanOpenAck(
 		return sdkerrors.Wrapf(types.ErrChannelCapabilityNotFound, "caller does not own capability for channel, port ID (%s) channel ID (%s)", portID, channelID)
 	}
 
-	// initialize the channel state verification options then perform channel state verification
-	opts := channelStateOpts{
-		order:               channel.Ordering,
-		expectedState:       types.TRYOPEN,
-		counterpartyVersion: counterpartyVersion,
-		portID:              portID,
-		channelID:           channelID,
-		counterpartyPortID:  channel.Counterparty.PortId,
-		counterpartyChanID:  counterpartyChannelID,
-		proofHeight:         proofHeight,
-		proof:               proofTry,
+	// expected channel is the channel on the counterparty
+	expectedChannel := types.Channel{
+		State:    types.TRYOPEN,
+		Ordering: channel.Ordering,
+		Counterparty: types.Counterparty{
+			PortId:    portID,
+			ChannelId: channelID,
+		},
+		ConnectionHops: channel.ConnectionHops,
+		Version:        counterpartyVersion,
 	}
 
-	err := k.verifyChannelState(ctx, channel.ConnectionHops[0], opts)
+	// perform channel state verification
+	err := k.verifyChannelState(ctx, expectedChannel, channel.Counterparty.PortId, counterpartyChannelID, proofHeight, proofTry)
 	if err != nil {
 		return err
 	}
@@ -273,20 +254,20 @@ func (k Keeper) ChanOpenConfirm(
 		return sdkerrors.Wrapf(types.ErrChannelCapabilityNotFound, "caller does not own capability for channel, port ID (%s) channel ID (%s)", portID, channelID)
 	}
 
-	// initialize the channel state verification options then perform channel state verification
-	opts := channelStateOpts{
-		order:               channel.Ordering,
-		expectedState:       types.OPEN,
-		counterpartyVersion: channel.Version,
-		portID:              portID,
-		channelID:           channelID,
-		counterpartyPortID:  channel.Counterparty.PortId,
-		counterpartyChanID:  channel.Counterparty.ChannelId,
-		proofHeight:         proofHeight,
-		proof:               proofAck,
+	// expected channel is the channel on the counterparty
+	expectedChannel := types.Channel{
+		State:    types.OPEN,
+		Ordering: channel.Ordering,
+		Counterparty: types.Counterparty{
+			PortId:    portID,
+			ChannelId: channelID,
+		},
+		ConnectionHops: channel.ConnectionHops,
+		Version:        channel.Version,
 	}
 
-	err := k.verifyChannelState(ctx, channel.ConnectionHops[0], opts)
+	// perform channel state verification
+	err := k.verifyChannelState(ctx, expectedChannel, channel.Counterparty.PortId, channel.Counterparty.ChannelId, proofHeight, proofAck)
 	if err != nil {
 		return err
 	}
@@ -392,20 +373,20 @@ func (k Keeper) ChanCloseConfirm(
 		return sdkerrors.Wrap(types.ErrInvalidChannelState, "channel is already CLOSED")
 	}
 
-	// initialize the channel state verification options then perform channel state verification
-	opts := channelStateOpts{
-		order:               channel.Ordering,
-		expectedState:       types.CLOSED,
-		counterpartyVersion: channel.Version,
-		portID:              portID,
-		channelID:           channelID,
-		counterpartyPortID:  channel.Counterparty.PortId,
-		counterpartyChanID:  channel.Counterparty.ChannelId,
-		proofHeight:         proofHeight,
-		proof:               proofInit,
+	// expected channel is the channel on the counterparty
+	expectedChannel := types.Channel{
+		State:    types.CLOSED,
+		Ordering: channel.Ordering,
+		Counterparty: types.Counterparty{
+			PortId:    portID,
+			ChannelId: channelID,
+		},
+		ConnectionHops: channel.ConnectionHops,
+		Version:        channel.Version,
 	}
 
-	err := k.verifyChannelState(ctx, channel.ConnectionHops[0], opts)
+	// perform channel state verification
+	err := k.verifyChannelState(ctx, expectedChannel, channel.Counterparty.PortId, channel.Counterparty.ChannelId, proofHeight, proofInit)
 	if err != nil {
 		return err
 	}

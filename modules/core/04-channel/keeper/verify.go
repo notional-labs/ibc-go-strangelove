@@ -13,37 +13,59 @@ import (
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
 )
 
-// channelStateOpts defines the data necessary to perform channel state verification.
-type channelStateOpts struct {
-	order               types.Order
-	expectedState       types.State
-	counterpartyVersion string
-	portID              string
-	channelID           string
-	counterpartyPortID  string
-	counterpartyChanID  string
-	proofHeight         exported.Height
-	proof               []byte
+// validateChanOpenInit performs the appropriate validation logic for ChanOpenInit.
+func (k Keeper) validateChanOpenInit(ctx sdk.Context, connectionID string, order types.Order) error {
+	if connectionID != connectiontypes.LocalhostID {
+		// connection hop length checked on msg.ValidateBasic()
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionID)
+		if !found {
+			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionID)
+		}
+
+		getVersions := connectionEnd.GetVersions()
+		if len(getVersions) != 1 {
+			return sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidVersion,
+				"single version must be negotiated on connection before opening channel, got: %v",
+				getVersions,
+			)
+		}
+
+		if !connectiontypes.VerifySupportedFeature(getVersions[0], order.String()) {
+			return sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidVersion,
+				"connection version %s does not support channel ordering: %s",
+				getVersions[0], order.String(),
+			)
+		}
+	}
+
+	return nil
 }
 
 // verifyChannelState performs the appropriate channel state verification logic for either a localhost connection
 // or a counterparty chain.
 func (k Keeper) verifyChannelState(
 	ctx sdk.Context,
-	connectionID string,
-	opts channelStateOpts,
+	expectedChannel types.Channel,
+	portID string,
+	channelID string,
+	proofHeight exported.Height,
+	proof []byte,
 ) error {
+	connectionID := expectedChannel.ConnectionHops[0]
+
 	if connectionID == connectiontypes.LocalhostID {
 		// get the counterparty channel directly from this chain's channelKeeper store
-		storedChannel, ok := k.GetChannel(ctx, opts.counterpartyPortID, opts.counterpartyChanID)
+		actualChannel, ok := k.GetChannel(ctx, portID, channelID)
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in the expected state
 		if !ok {
 			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
 		}
 
-		if storedChannel.State != opts.expectedState {
-			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not %s (got %s)", opts.expectedState, storedChannel.State)
+		if actualChannel.State != expectedChannel.State {
+			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not %s (got %s)", expectedChannel.State, actualChannel.State)
 		}
 	} else {
 		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionID)
@@ -59,7 +81,7 @@ func (k Keeper) verifyChannelState(
 		}
 
 		// connection version & feature verification only need to happen on ChanOpenTry
-		if opts.expectedState == types.INIT {
+		if expectedChannel.State == types.INIT {
 			getVersions := connectionEnd.GetVersions()
 			if len(getVersions) != 1 {
 				return sdkerrors.Wrapf(
@@ -69,26 +91,21 @@ func (k Keeper) verifyChannelState(
 				)
 			}
 
-			if !connectiontypes.VerifySupportedFeature(getVersions[0], opts.order.String()) {
+			if !connectiontypes.VerifySupportedFeature(getVersions[0], expectedChannel.Ordering.String()) {
 				return sdkerrors.Wrapf(
 					connectiontypes.ErrInvalidVersion,
-					"connection version %s does not support channel ordering: %s", getVersions[0], opts.order.String(),
+					"connection version %s does not support channel ordering: %s", getVersions[0], expectedChannel.Ordering.String(),
 				)
 			}
 		}
 
 		counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}
 
-		// expectedCounterparty is the counterparty of the counterparty's channel end (i.e self)
-		expectedCounterparty := types.NewCounterparty(opts.portID, opts.channelID)
-		expectedChannel := types.NewChannel(
-			opts.expectedState, opts.order, expectedCounterparty,
-			counterpartyHops, opts.counterpartyVersion,
-		)
+		expectedChannel.ConnectionHops = counterpartyHops
 
 		if err := k.connectionKeeper.VerifyChannelState(
-			ctx, connectionEnd, opts.proofHeight, opts.proof,
-			opts.counterpartyPortID, opts.counterpartyChanID, expectedChannel,
+			ctx, connectionEnd, proofHeight, proof,
+			portID, channelID, expectedChannel,
 		); err != nil {
 			return err
 		}
@@ -97,9 +114,9 @@ func (k Keeper) verifyChannelState(
 	return nil
 }
 
-// verifyPacketSend performs the appropriate packet verification logic for either a packet being sent on a localhost
+// validatePacketSend performs the appropriate validation logic for either a packet being sent on a localhost
 // connection or a packet being sent to a counterparty chain.
-func (k Keeper) verifyPacketSend(ctx sdk.Context, connectionID string, packet exported.PacketI) error {
+func (k Keeper) validatePacketSend(ctx sdk.Context, connectionID string, packet exported.PacketI) error {
 	if connectionID == connectiontypes.LocalhostID {
 		// check if packet is timed out
 		latestHeight := uint64(ctx.BlockHeight())

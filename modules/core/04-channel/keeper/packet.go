@@ -58,7 +58,7 @@ func (k Keeper) SendPacket(
 	}
 
 	// perform packet send verification
-	err := k.verifyPacketSend(ctx, channel.ConnectionHops[0], packet)
+	err := k.validatePacketSend(ctx, channel.ConnectionHops[0], packet)
 	if err != nil {
 		return err
 	}
