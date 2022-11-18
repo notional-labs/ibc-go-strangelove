@@ -1,6 +1,7 @@
 package wasm_test
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -63,12 +64,14 @@ func (suite *WasmTestSuite) SetupTest() {
 	}
 	err = clientState.Initialize(suite.ctx, suite.cdc, suite.store, &consensusState)
 	suite.Require().NoError(err)
+
+	value := suite.store.Get([]byte("client_test_item"))
+	suite.Require().NotNil(value)
+	fmt.Println("Value: ", string(value[:]))
 }
 
 func (suite *WasmTestSuite) TestWasm() {
-	suite.Run("Init contract", func() {
-		suite.SetupTest()
-	})
+	suite.Run("Init contract", func() {})
 }
 
 func TestWasmTestSuite(t *testing.T) {
