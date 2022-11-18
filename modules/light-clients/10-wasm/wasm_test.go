@@ -10,7 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
-	wasm "github.com/cosmos/ibc-go/v5/modules/light-clients/10-wasm/types"
+	wasm "github.com/cosmos/ibc-go/v5/modules/light-clients/10-wasm"
 	ibctesting "github.com/cosmos/ibc-go/v5/testing"
 	"github.com/cosmos/ibc-go/v5/testing/simapp"
 	"github.com/stretchr/testify/suite"

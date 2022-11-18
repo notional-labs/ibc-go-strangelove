@@ -5,10 +5,9 @@ package ibc.lightclients.wasm.v1;
 import "gogoproto/gogo.proto";
 import "ibc/core/client/v1/client.proto";
 import "ibc/core/commitment/v1/commitment.proto";
-import "google/protobuf/timestamp.proto";
 import "proofs.proto";
 
-option go_package = "github.com/cosmos/ibc-go/v5/modules/light-clients/10-wasm/types";
+option go_package = "github.com/cosmos/ibc-go/v5/modules/light-clients/10-wasm;wasm";
 
 // Wasm light client's Client state
 message ClientState {
@@ -16,8 +15,8 @@ message ClientState {
   bytes                     data          = 1;
   bytes                     code_id       = 2;
   ibc.core.client.v1.Height latest_height = 3;
-  repeated ics23.ProofSpec  proof_specs   = 4;
-  string                    repository    = 5;
+  repeated ics23.ProofSpec proof_specs    = 4;
+  string                   repository     = 5;
 }
 
 // Wasm light client's ConsensusState

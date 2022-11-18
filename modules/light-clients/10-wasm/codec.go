@@ -1,4 +1,4 @@
-package types
+package wasm
 
 import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"

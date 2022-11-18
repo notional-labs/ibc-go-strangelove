@@ -1,4 +1,4 @@
-package types
+package wasm
 
 import (
 	"fmt"
@@ -12,10 +12,6 @@ var _ exported.ConsensusState = (*ConsensusState)(nil)
 
 func (m *ConsensusState) ClientType() string {
 	return exported.Wasm
-}
-
-func (m *ConsensusState) GetRoot() exported.Root {
-	return m.Root
 }
 
 func (m *ConsensusState) GetTimestamp() uint64 {

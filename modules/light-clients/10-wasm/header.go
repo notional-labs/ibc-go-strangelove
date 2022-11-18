@@ -1,4 +1,4 @@
-package types
+package wasm
 
 import (
 	"fmt"
@@ -11,10 +11,6 @@ import (
 
 func (m *Header) ClientType() string {
 	return exported.Wasm
-}
-
-func (m *Header) GetHeight() exported.Height {
-	return m.Height
 }
 
 func (m *Header) ValidateBasic() error {
