@@ -1,6 +1,7 @@
 package wasm
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -14,15 +15,15 @@ import (
 
 var _ exported.ClientState = (*ClientState)(nil)
 
-func (c *ClientState) ClientType() string {
+func (c ClientState) ClientType() string {
 	return exported.Wasm
 }
 
-func (c *ClientState) GetLatestHeight() exported.Height {
+func (c ClientState) GetLatestHeight() exported.Height {
 	return c.LatestHeight
 }
 
-func (c *ClientState) Validate() error {
+func (c ClientState) Validate() error {
 	if c.Data == nil || len(c.Data) == 0 {
 		return fmt.Errorf("data cannot be empty")
 	}
@@ -30,15 +31,39 @@ func (c *ClientState) Validate() error {
 	if c.CodeId == nil || len(c.CodeId) == 0 {
 		return fmt.Errorf("codeid cannot be empty")
 	}
+	
 	return nil
 }
 
-func (c *ClientState) Status(ctx sdk.Context, store sdk.KVStore, cdc codec.BinaryCodec) exported.Status {
+// Temp method for proving reading the KVStore from the Contract
+// Prereqs: 
+//	1. ClientState Initialize / Contract Instantiation must have been called
+//	2. ClientState written into store on go-side
+//	3. ConsensusState written into store on go-side
+func (c ClientState) TestSharedKVStore(ctx sdk.Context, store sdk.KVStore) error {
+	// Read "client_test_item" is initialized in contract instantiation (wasm-side) and read here (go-side)
+	value := store.Get([]byte("client_test_item"))
+	if(bytes.Compare(value, []byte("12783490")) != 0) {
+		return fmt.Errorf("Cannot read client_test_item set in contract's instantiation")
+	}
+	fmt.Println("Value: ", string(value[:]))
+
+	// Call Execute, read ClientState/ConsensusState, modify, read here
+	_, err := callContract(c.CodeId, ctx, store, []byte("{}"))
+	if(err != nil){
+		return err
+	}
+
+
+	return nil
+}
+
+func (c ClientState) Status(ctx sdk.Context, store sdk.KVStore, cdc codec.BinaryCodec) exported.Status {
 	// TODO: store the status of the client in the SDK store to make it easier to query?
 	return exported.Active
 }
 
-func (c *ClientState) ExportMetadata(store sdk.KVStore) []exported.GenesisMetadata {
+func (c ClientState) ExportMetadata(store sdk.KVStore) []exported.GenesisMetadata {
 	const ExportMetadataQuery = "exportmetadata"
 	payload := make(map[string]map[string]interface{})
 	payload[ExportMetadataQuery] = make(map[string]interface{})
@@ -66,7 +91,7 @@ func (c *ClientState) ExportMetadata(store sdk.KVStore) []exported.GenesisMetada
 	return genesisMetadata
 }
 
-func (c *ClientState) ZeroCustomFields() exported.ClientState {
+func (c ClientState) ZeroCustomFields() exported.ClientState {
 	const ZeroCustomFields = "zerocustomfields"
 	payload := make(map[string]map[string]interface{})
 	payload[ZeroCustomFields] = make(map[string]interface{})
@@ -100,11 +125,11 @@ func (c *ClientState) ZeroCustomFields() exported.ClientState {
 	if err := json.Unmarshal(out.Data, &output); err != nil {
 		// TODO: Handle error
 	}
-	output.resetImmutables(c)
+	output.resetImmutables(&c)
 	return output.Me
 }
 
-func (c *ClientState) GetTimestampAtHeight(
+func (c ClientState) GetTimestampAtHeight(
 	ctx sdk.Context,
 	clientStore sdk.KVStore,
 	cdc codec.BinaryCodec,
@@ -118,50 +143,15 @@ func (c *ClientState) GetTimestampAtHeight(
 	return consState.GetTimestamp(), nil
 }
 
-func (c *ClientState) Initialize(context sdk.Context, marshaler codec.BinaryCodec, store sdk.KVStore, state exported.ConsensusState) error {
-	const InitializeState = "initialize_state"
-	payload := make(map[string]map[string]interface{})
-	payload[InitializeState] = make(map[string]interface{})
-	inner := payload[InitializeState]
-	inner["me"] = c
-	inner["consensus_state"] = state
-
-	encodedData, err := json.Marshal(payload)
-	if err != nil {
-		return sdkerrors.Wrapf(ErrUnableToMarshalPayload, fmt.Sprintf("underlying error: %s", err.Error()))
-	}
-
-	// Under the hood there are two calls to wasm contract for initialization as by design
-	// cosmwasm does not allow init call to return any value.
-
-	_, err = initContract(c.CodeId, context, store, encodedData)
+func (c ClientState) Initialize(context sdk.Context, marshaler codec.BinaryCodec, store sdk.KVStore, state exported.ConsensusState) error {
+	_, err := initContract(c.CodeId, context, store)
 	if err != nil {
 		return sdkerrors.Wrapf(ErrUnableToInit, fmt.Sprintf("underlying error: %s", err.Error()))
-	}
-
-	out, err := callContract(c.CodeId, context, store, encodedData)
-	if err != nil {
-		return sdkerrors.Wrapf(ErrUnableToCall, fmt.Sprintf("underlying error: %s", err.Error()))
-	}
-	output := clientStateCallResponse{}
-	if err := json.Unmarshal(out.Data, &output); err != nil {
-		return sdkerrors.Wrapf(ErrUnableToUnmarshalPayload, fmt.Sprintf("underlying error: %s", err.Error()))
-	}
-	if !output.Result.IsValid {
-		return fmt.Errorf("%s error occurred while initializing client state", output.Result.ErrorMsg)
-	}
-	output.resetImmutables(c)
-
-	*c = *output.Me
-
-	_, err = SaveClientStateIntoWasmStorage(context, marshaler, store, c)
-	if err != nil {
-		return fmt.Errorf("%s error occurred while duplicating into wasm storage", err.Error())
 	}
 	return nil
 }
 
-func (c *ClientState) VerifyMembership(
+func (c ClientState) VerifyMembership(
 	ctx sdk.Context,
 	clientStore sdk.KVStore,
 	cdc codec.BinaryCodec,
@@ -175,7 +165,7 @@ func (c *ClientState) VerifyMembership(
 	panic("implement me")
 }
 
-func (c *ClientState) VerifyNonMembership(
+func (c ClientState) VerifyNonMembership(
 	ctx sdk.Context,
 	clientStore sdk.KVStore,
 	cdc codec.BinaryCodec,
@@ -192,22 +182,22 @@ func (c *ClientState) VerifyNonMembership(
 // It must handle each type of ClientMessage appropriately. Calls to CheckForMisbehaviour, UpdateState, and UpdateStateOnMisbehaviour
 // will assume that the content of the ClientMessage has been verified and can be trusted. An error should be returned
 // if the ClientMessage fails to verify.
-func (c *ClientState) VerifyClientMessage(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg exported.ClientMessage) error {
+func (c ClientState) VerifyClientMessage(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg exported.ClientMessage) error {
 	return nil
 }
 
-func (c *ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, msg exported.ClientMessage) bool {
+func (c ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, msg exported.ClientMessage) bool {
 	// TODO: implement
 	return false
 }
 
 // UpdateStateOnMisbehaviour should perform appropriate state changes on a client state given that misbehaviour has been detected and verified
-func (c *ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg exported.ClientMessage) {
+func (c ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg exported.ClientMessage) {
 	return
 }
 
-func (c *ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg exported.ClientMessage) []exported.Height {
-	_, err := SaveClientStateIntoWasmStorage(ctx, cdc, clientStore, c)
+func (c ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg exported.ClientMessage) []exported.Height {
+	_, err := SaveClientStateIntoWasmStorage(ctx, cdc, clientStore, &c)
 	// TODO: implement
 	if err != nil {
 		return []exported.Height{}
@@ -215,7 +205,7 @@ func (c *ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	return []exported.Height{}
 }
 
-func (c *ClientState) CheckSubstituteAndUpdateState(
+func (c ClientState) CheckSubstituteAndUpdateState(
 	ctx sdk.Context, cdc codec.BinaryCodec, subjectClientStore,
 	substituteClientStore sdk.KVStore, substituteClient exported.ClientState,
 ) error {
@@ -258,10 +248,10 @@ func (c *ClientState) CheckSubstituteAndUpdateState(
 		return fmt.Errorf("%s error occurred while updating client state", output.Result.ErrorMsg)
 	}
 
-	output.resetImmutables(c)
+	output.resetImmutables(&c)
 	return nil
 }
-func (c *ClientState) VerifyUpgradeAndUpdateState(
+func (c ClientState) VerifyUpgradeAndUpdateState(
 	ctx sdk.Context,
 	cdc codec.BinaryCodec,
 	store sdk.KVStore,
@@ -270,7 +260,7 @@ func (c *ClientState) VerifyUpgradeAndUpdateState(
 	proofUpgradeClient,
 	proofUpgradeConsState []byte,
 ) error {
-	_, err := SaveClientStateIntoWasmStorage(ctx, cdc, store, c)
+	_, err := SaveClientStateIntoWasmStorage(ctx, cdc, store, &c)
 	// TODO: implement
 	if err != nil {
 		return fmt.Errorf("%s error occurred while duplicating into wasm storage", err.Error())

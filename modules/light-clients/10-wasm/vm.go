@@ -108,19 +108,19 @@ func SaveClientStateIntoWasmStorage(ctx sdk.Context, cdc codec.BinaryCodec, stor
 	return callContract(c.CodeId, ctx, store, msg)
 }
 
-func PushNewWasmCode(store sdk.KVStore, c *ClientState, code []byte) error {
+func PushNewWasmCode(store sdk.KVStore, code []byte) (cosmwasm.Checksum, error) {
 	// check to see if the store has a code with the same code id
 	codeHash := generateWasmCodeHash(code)
 	codeIDKey := CodeID(codeHash)
 	if store.Has(codeIDKey) {
-		return ErrWasmCodeExists
+		return nil, ErrWasmCodeExists
 	}
 
 	// run the code through the wasm light client validation process
 	if isValidWasmCode, err := WasmVal.validateWasmCode(code); err != nil {
-		return sdkerrors.Wrapf(ErrWasmCodeValidation, "unable to validate wasm code: %s", err)
+		return nil, sdkerrors.Wrapf(ErrWasmCodeValidation, "unable to validate wasm code: %s", err)
 	} else if !isValidWasmCode {
-		return ErrWasmInvalidCode
+		return nil, ErrWasmInvalidCode
 	}
 
 	// create the code in the vm
@@ -128,22 +128,21 @@ func PushNewWasmCode(store sdk.KVStore, c *ClientState, code []byte) error {
 	// is no code with the same hash?
 	codeID, err := WasmVM.Create(code)
 	if err != nil {
-		return ErrWasmInvalidCode
+		return nil, ErrWasmInvalidCode
 	}
 
 	// safety check to assert that code id returned by WasmVM equals to code hash
 	if !bytes.Equal(codeID, codeHash) {
-		return ErrWasmInvalidCodeID
+		return nil, ErrWasmInvalidCodeID
 	}
 
 	store.Set(codeIDKey, code)
-	c.CodeId = codeID
-	return nil
+	return codeID, nil
 }
 
 // Calls vm.Init with appropriate arguments
 // TODO: Move this into a public method on the 28-wasm keeper
-func initContract(codeID []byte, ctx sdk.Context, store sdk.KVStore, msg []byte) (*types.Response, error) {
+func initContract(codeID []byte, ctx sdk.Context, store sdk.KVStore) (*types.Response, error) {
 	gasMeter := ctx.GasMeter()
 	chainID := ctx.BlockHeader().ChainID
 	height := ctx.BlockHeader().Height
@@ -174,7 +173,7 @@ func initContract(codeID []byte, ctx sdk.Context, store sdk.KVStore, msg []byte)
 	// mockQuerier := api.MockQuerier{}
 
 	desercost := types.UFraction{Numerator: 0, Denominator: 1}
-	response, _, err := WasmVM.Instantiate(codeID, env, msgInfo, msg, store, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
+	response, _, err := WasmVM.Instantiate(codeID, env, msgInfo, []byte("{}"), store, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
 	return response, err
 }
 

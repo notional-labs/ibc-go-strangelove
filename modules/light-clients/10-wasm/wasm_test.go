@@ -9,12 +9,14 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/ibc-go/v5/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
 	wasm "github.com/cosmos/ibc-go/v5/modules/light-clients/10-wasm"
 	ibctesting "github.com/cosmos/ibc-go/v5/testing"
 	"github.com/cosmos/ibc-go/v5/testing/simapp"
 	"github.com/stretchr/testify/suite"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 )
 
 type WasmTestSuite struct {
@@ -51,27 +53,49 @@ func (suite *WasmTestSuite) SetupTest() {
 		MaxSizeAllowed: int(math.Pow(2, 26)),
 	}
 	suite.store = suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), exported.Wasm)
-	clientState := wasm.ClientState{}
 	os.MkdirAll("tmp", 0o755)
 	wasm.CreateVM(&wasmConfig, &validationConfig)
 	data, err := os.ReadFile("ics10_grandpa_cw.wasm")
+	suite.Require().NoError(err)
+	
+	// Currently pushing to client-specific store, this will change to a keeper, but okay for now/testing (single wasm client)
+	codeId, err := wasm.PushNewWasmCode(suite.store, data)
+	suite.Require().NoError(err)
 
-	suite.Require().NoError(err)
-	err = wasm.PushNewWasmCode(suite.store, &clientState, data)
-	suite.Require().NoError(err)
-	consensusState := wasm.ConsensusState{
-		CodeId: clientState.CodeId,
+	clientState := wasm.ClientState{
+		Data: []byte("ClientStateData"),
+		CodeId: codeId,
+		LatestHeight: types.NewHeight(1,1),
 	}
+
+	consensusState := wasm.ConsensusState{
+		Data: []byte("ConsensusStateData"),
+		CodeId: codeId,
+		Timestamp: 1,
+	}
+
+	clientTestItem := []byte("client_test_item")
+	originalNumber := []byte("12783490")
+	finalNumber := []byte("12783491")
+	suite.store.Set(clientTestItem, originalNumber)
+
+	// Initialize only instantiates the contract
 	err = clientState.Initialize(suite.ctx, suite.cdc, suite.store, &consensusState)
 	suite.Require().NoError(err)
 
-	value := suite.store.Get([]byte("client_test_item"))
+	// "client_test_item" is initialized in contract instantiation (wasm-side) and read here (go-side)
+	value := suite.store.Get(clientTestItem)
 	suite.Require().NotNil(value)
+	suite.Require().Equal(value, finalNumber)
 	fmt.Println("Value: ", string(value[:]))
+
+	// Replicate the 02-client CreateClient code
+	suite.store.Set(host.ClientStateKey(), types.MustMarshalClientState(suite.cdc, &clientState))
+	suite.store.Set(host.ConsensusStateKey(clientState.GetLatestHeight()), types.MustMarshalConsensusState(suite.cdc, &consensusState))
+
 }
 
-func (suite *WasmTestSuite) TestWasm() {
-	suite.Run("Init contract", func() {})
+func (suite *WasmTestSuite) TestWasmExecute() {
 }
 
 func TestWasmTestSuite(t *testing.T) {

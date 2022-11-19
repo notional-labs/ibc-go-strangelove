@@ -9,11 +9,11 @@ import (
 // TODO: figure out what to do with the header interface
 // var _ exported.Header = (*Header)(nil)
 
-func (m *Header) ClientType() string {
+func (m Header) ClientType() string {
 	return exported.Wasm
 }
 
-func (m *Header) ValidateBasic() error {
+func (m Header) ValidateBasic() error {
 	if m.Data == nil || len(m.Data) == 0 {
 		return fmt.Errorf("data cannot be empty")
 	}
