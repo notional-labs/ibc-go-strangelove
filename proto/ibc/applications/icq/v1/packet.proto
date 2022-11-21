@@ -10,6 +10,8 @@ import "tendermint/abci/types.proto";
 // InterchainQueryPacketData is comprised of raw query.
 message InterchainQueryPacketData {
   bytes data = 1;
+  // optional memo
+  string memo = 2;
 }
 
 // InterchainQueryPacketAck is comprised of an ABCI query response with non-deterministic fields left empty (e.g. Codespace, Log, Info and ...).

@@ -1575,6 +1575,7 @@ InterchainQueryPacketData is comprised of raw query.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | `data` | [bytes](#bytes) |  |  |
+| `memo` | [string](#string) |  | optional memo |
 
 
 
