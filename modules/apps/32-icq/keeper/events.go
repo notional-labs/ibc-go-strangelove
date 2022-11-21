@@ -3,7 +3,7 @@ package keeper
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	icqtypes "github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
+	"github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
 	"github.com/cosmos/ibc-go/v6/modules/core/exported"
 )
 
@@ -11,10 +11,10 @@ import (
 func EmitWriteErrorAcknowledgementEvent(ctx sdk.Context, packet exported.PacketI, err error) {
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			icqtypes.EventTypePacketError,
-			sdk.NewAttribute(sdk.AttributeKeyModule, icqtypes.ModuleName),
-			sdk.NewAttribute(icqtypes.AttributeKeyAckError, err.Error()),
-			sdk.NewAttribute(icqtypes.AttributeKeyHostChannelID, packet.GetDestChannel()),
+			types.EventTypePacketError,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeKeyAckError, err.Error()),
+			sdk.NewAttribute(types.AttributeKeyHostChannelID, packet.GetDestChannel()),
 		),
 	)
 }

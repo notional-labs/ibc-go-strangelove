@@ -4,12 +4,10 @@ import (
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
-	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/suite"
 	abcitypes "github.com/tendermint/tendermint/abci/types"
-	tmprotostate "github.com/tendermint/tendermint/proto/tendermint/state"
-	tmstate "github.com/tendermint/tendermint/state"
 
 	icq "github.com/cosmos/ibc-go/v6/modules/apps/32-icq"
 	"github.com/cosmos/ibc-go/v6/modules/apps/32-icq/types"
@@ -20,14 +18,12 @@ import (
 )
 
 var (
-	// TestVersion defines a reusable icq version string for testing purposes
-	TestVersion = "icq-1"
-
-	TestQueryPath = "/store/params/key"
-	TestQueryData = "icqhost/HostEnabled"
+	TestAccount          = "cosmos17dtl0mjt3t77kpuhg2edqzjpszulwhgzuj9ljs"
+	TestBalance          = sdk.NewInt64Coin("stake", 100)
+	BankBalanceQueryPath = "/cosmos.bank.v1beta1.Query/Balance"
 )
 
-type InterchainQueriesTestSuite struct {
+type InterchainQueryTestSuite struct {
 	suite.Suite
 
 	coordinator *ibctesting.Coordinator
@@ -37,11 +33,11 @@ type InterchainQueriesTestSuite struct {
 	chainB *ibctesting.TestChain
 }
 
-func TestInterchainQuerySuite(t *testing.T) {
-	suite.Run(t, new(InterchainQueriesTestSuite))
+func TestICQTestSuite(t *testing.T) {
+	suite.Run(t, new(InterchainQueryTestSuite))
 }
 
-func (suite *InterchainQueriesTestSuite) SetupTest() {
+func (suite *InterchainQueryTestSuite) SetupTest() {
 	suite.coordinator = ibctesting.NewCoordinator(suite.T(), 2)
 	suite.chainA = suite.coordinator.GetChain(ibctesting.GetChainID(1))
 	suite.chainB = suite.coordinator.GetChain(ibctesting.GetChainID(2))
@@ -53,8 +49,8 @@ func NewICQPath(chainA, chainB *ibctesting.TestChain) *ibctesting.Path {
 	path.EndpointB.ChannelConfig.PortID = types.PortID
 	path.EndpointA.ChannelConfig.Order = channeltypes.UNORDERED
 	path.EndpointB.ChannelConfig.Order = channeltypes.UNORDERED
-	path.EndpointA.ChannelConfig.Version = TestVersion
-	path.EndpointB.ChannelConfig.Version = TestVersion
+	path.EndpointA.ChannelConfig.Version = types.Version
+	path.EndpointB.ChannelConfig.Version = types.Version
 
 	return path
 }
@@ -80,7 +76,7 @@ func SetupICQPath(path *ibctesting.Path) error {
 	return nil
 }
 
-func (suite *InterchainQueriesTestSuite) TestOnChanOpenInit() {
+func (suite *InterchainQueryTestSuite) TestOnChanOpenInit() {
 	var (
 		channel      *channeltypes.Channel
 		path         *ibctesting.Path
@@ -164,7 +160,7 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenInit() {
 	}
 }
 
-func (suite *InterchainQueriesTestSuite) TestOnChanOpenTry() {
+func (suite *InterchainQueryTestSuite) TestOnChanOpenTry() {
 	var (
 		channel             *channeltypes.Channel
 		chanCap             *capabilitytypes.Capability
@@ -182,6 +178,11 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenTry() {
 			"success", func() {}, true,
 		},
 		{
+			"empty version string", func() {
+				channel.Version = ""
+			}, true,
+		},
+		{
 			"invalid order - ORDERED", func() {
 				channel.Ordering = channeltypes.ORDERED
 			}, false,
@@ -194,6 +195,11 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenTry() {
 		{
 			"invalid counterparty version", func() {
 				counterpartyVersion = "version"
+			}, false,
+		},
+		{
+			"host submodule disabled", func() {
+				suite.chainA.GetSimApp().ICQKeeper.SetParams(suite.chainA.GetContext(), types.NewParams(false, []string{}))
 			}, false,
 		},
 	}
@@ -244,7 +250,7 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenTry() {
 	}
 }
 
-func (suite *InterchainQueriesTestSuite) TestOnChanOpenAck() {
+func (suite *InterchainQueryTestSuite) TestOnChanOpenAck() {
 	var counterpartyVersion string
 
 	testCases := []struct {
@@ -258,6 +264,11 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenAck() {
 		{
 			"invalid counterparty version", func() {
 				counterpartyVersion = "version"
+			}, false,
+		},
+		{
+			"host submodule disabled", func() {
+				suite.chainA.GetSimApp().ICQKeeper.SetParams(suite.chainA.GetContext(), types.NewParams(false, []string{}))
 			}, false,
 		},
 	}
@@ -292,7 +303,194 @@ func (suite *InterchainQueriesTestSuite) TestOnChanOpenAck() {
 	}
 }
 
-func (suite *InterchainQueriesTestSuite) TestOnAcknowledgementPacket() {
+func (suite *InterchainQueryTestSuite) TestOnChanOpenConfirm() {
+	testCases := []struct {
+		name     string
+		malleate func()
+		expPass  bool
+	}{
+		{
+			"success", func() {}, true,
+		},
+		{
+			"host submodule disabled", func() {
+				suite.chainA.GetSimApp().ICQKeeper.SetParams(suite.chainA.GetContext(), types.NewParams(false, []string{}))
+			}, false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		suite.Run(tc.name, func() {
+			suite.SetupTest() // reset
+
+			path := NewICQPath(suite.chainA, suite.chainB)
+			suite.coordinator.SetupConnections(path)
+			path.EndpointA.ChannelID = ibctesting.FirstChannelID
+
+			module, _, err := suite.chainA.App.GetIBCKeeper().PortKeeper.LookupModuleByPort(suite.chainA.GetContext(), types.PortID)
+			suite.Require().NoError(err)
+
+			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
+			suite.Require().True(ok)
+
+			tc.malleate() // explicitly change fields in channel and testChannel
+
+			err = cbs.OnChanOpenConfirm(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+
+			if tc.expPass {
+				suite.Require().NoError(err)
+			} else {
+				suite.Require().Error(err)
+			}
+		})
+	}
+}
+
+func (suite *InterchainQueryTestSuite) TestOnChanCloseInit() {
+	path := NewICQPath(suite.chainA, suite.chainB)
+	suite.coordinator.SetupConnections(path)
+
+	err := SetupICQPath(path)
+	suite.Require().NoError(err)
+
+	module, _, err := suite.chainA.App.GetIBCKeeper().PortKeeper.LookupModuleByPort(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID)
+	suite.Require().NoError(err)
+
+	cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
+	suite.Require().True(ok)
+
+	err = cbs.OnChanCloseInit(
+		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
+	)
+
+	// Closing the channel in icq is possible
+	suite.Require().NoError(err)
+}
+
+func (suite *InterchainQueryTestSuite) TestOnChanCloseConfirm() {
+	path := NewICQPath(suite.chainA, suite.chainB)
+	suite.coordinator.SetupConnections(path)
+
+	err := SetupICQPath(path)
+	suite.Require().NoError(err)
+
+	module, _, err := suite.chainA.App.GetIBCKeeper().PortKeeper.LookupModuleByPort(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID)
+	suite.Require().NoError(err)
+
+	cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
+	suite.Require().True(ok)
+
+	err = cbs.OnChanCloseConfirm(
+		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
+	)
+
+	// Closing the channel in icq is possible
+	suite.Require().NoError(err)
+}
+
+func (suite *InterchainQueryTestSuite) TestOnRecvPacket() {
+	var packetData []byte
+	testCases := []struct {
+		name          string
+		malleate      func()
+		expAckSuccess bool
+	}{
+		{
+			"success", func() {}, true,
+		},
+		{
+			"host submodule disabled", func() {
+				suite.chainB.GetSimApp().ICQKeeper.SetParams(suite.chainB.GetContext(), types.NewParams(false, []string{}))
+			}, false,
+		},
+		{
+			"ICQ OnRecvPacket fails - cannot unmarshal packet data", func() {
+				packetData = []byte("invalid data")
+			}, false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		suite.Run(tc.name, func() {
+			suite.SetupTest() // reset
+
+			path := NewICQPath(suite.chainA, suite.chainB)
+			suite.coordinator.SetupConnections(path)
+			err := SetupICQPath(path)
+			suite.Require().NoError(err)
+
+			// send 100stake to test account wallet
+			bankMsg := &banktypes.MsgSend{FromAddress: suite.chainB.SenderAccount.GetAddress().String(), ToAddress: TestAccount, Amount: sdk.NewCoins(TestBalance)}
+
+			_, err = suite.chainB.SendMsgs(bankMsg)
+			suite.Require().NoError(err)
+
+			// build packet data
+			q := abcitypes.RequestQuery{
+				Data: suite.chainA.Codec.MustMarshal(&banktypes.QueryBalanceRequest{
+					Address: TestAccount,
+					Denom:   "stake",
+				}),
+				Path: BankBalanceQueryPath,
+			}
+			data, err := types.SerializeCosmosQuery([]abcitypes.RequestQuery{q})
+			suite.Require().NoError(err)
+
+			icqPacketData := types.InterchainQueryPacketData{
+				Data: data,
+			}
+			packetData = icqPacketData.GetBytes()
+
+			// build expected ack
+			r := abcitypes.ResponseQuery{
+				Value: suite.chainB.Codec.MustMarshal(&banktypes.QueryBalanceResponse{
+					Balance: &TestBalance,
+				}),
+				Height: suite.chainB.LastHeader.Header.Height,
+			}
+			rdata, err := types.SerializeCosmosResponse([]abcitypes.ResponseQuery{r})
+			suite.Require().NoError(err)
+
+			expectedQueryResponse := types.ModuleCdc.MustMarshalJSON(&types.InterchainQueryPacketAck{
+				Data: rdata,
+			})
+			suite.Require().NoError(err)
+
+			expectedAck := channeltypes.NewResultAcknowledgement(expectedQueryResponse)
+
+			params := types.NewParams(true, []string{BankBalanceQueryPath})
+			suite.chainB.GetSimApp().ICQKeeper.SetParams(suite.chainB.GetContext(), params)
+
+			// malleate packetData for test cases
+			tc.malleate()
+
+			seq := uint64(1)
+			packet := channeltypes.NewPacket(packetData, seq, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, clienttypes.NewHeight(0, 100), 0)
+
+			tc.malleate()
+
+			module, _, err := suite.chainB.App.GetIBCKeeper().PortKeeper.LookupModuleByPort(suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID)
+			suite.Require().NoError(err)
+
+			cbs, ok := suite.chainB.App.GetIBCKeeper().Router.GetRoute(module)
+			suite.Require().True(ok)
+
+			ack := cbs.OnRecvPacket(suite.chainB.GetContext(), packet, nil)
+			if tc.expAckSuccess {
+				suite.Require().True(ack.Success())
+				suite.Require().Equal(expectedAck, ack)
+			} else {
+				suite.Require().False(ack.Success())
+			}
+		})
+	}
+}
+
+func (suite *InterchainQueryTestSuite) TestOnAcknowledgementPacket() {
 	testCases := []struct {
 		name     string
 		malleate func()
@@ -317,10 +515,10 @@ func (suite *InterchainQueriesTestSuite) TestOnAcknowledgementPacket() {
 
 			tc.malleate() // malleate mutates test data
 
-			module, _, err := suite.chainB.App.GetIBCKeeper().PortKeeper.LookupModuleByPort(suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID)
+			module, _, err := suite.chainA.App.GetIBCKeeper().PortKeeper.LookupModuleByPort(suite.chainA.GetContext(), path.EndpointB.ChannelConfig.PortID)
 			suite.Require().NoError(err)
 
-			cbs, ok := suite.chainB.App.GetIBCKeeper().Router.GetRoute(module)
+			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
 			packet := channeltypes.NewPacket(
@@ -334,7 +532,7 @@ func (suite *InterchainQueriesTestSuite) TestOnAcknowledgementPacket() {
 				0,
 			)
 
-			err = cbs.OnAcknowledgementPacket(suite.chainB.GetContext(), packet, []byte("ackBytes"), nil)
+			err = cbs.OnAcknowledgementPacket(suite.chainA.GetContext(), packet, []byte("ackBytes"), nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -345,7 +543,7 @@ func (suite *InterchainQueriesTestSuite) TestOnAcknowledgementPacket() {
 	}
 }
 
-func (suite *InterchainQueriesTestSuite) TestOnTimeoutPacket() {
+func (suite *InterchainQueryTestSuite) TestOnTimeoutPacket() {
 	testCases := []struct {
 		name     string
 		malleate func()
@@ -396,64 +594,4 @@ func (suite *InterchainQueriesTestSuite) TestOnTimeoutPacket() {
 			}
 		})
 	}
-}
-
-// The safety of including SDK MsgResponses in the acknowledgement rests
-// on the inclusion of the abcitypes.ResponseDeliverTx.Data in the
-// abcitypes.ResposneDeliverTx hash. If the abcitypes.ResponseDeliverTx.Data
-// gets removed from consensus they must no longer be used in the packet
-// acknowledgement.
-//
-// This test acts as an indicqtor that the abcitypes.ResponseDeliverTx.Data
-// may no longer be deterministic.
-func (suite *InterchainQueriesTestSuite) TestABCICodeDeterminism() {
-	msgResponseBz, err := proto.Marshal(&channeltypes.MsgChannelOpenInitResponse{})
-	suite.Require().NoError(err)
-
-	msgData := &sdk.MsgData{
-		MsgType: sdk.MsgTypeURL(&channeltypes.MsgChannelOpenInit{}),
-		Data:    msgResponseBz,
-	}
-
-	txResponse, err := proto.Marshal(&sdk.TxMsgData{
-		Data: []*sdk.MsgData{msgData},
-	})
-	suite.Require().NoError(err)
-
-	deliverTx := abcitypes.ResponseDeliverTx{
-		Data: txResponse,
-	}
-	responses := tmprotostate.ABCIResponses{
-		DeliverTxs: []*abcitypes.ResponseDeliverTx{
-			&deliverTx,
-		},
-	}
-
-	differentMsgResponseBz, err := proto.Marshal(&channeltypes.MsgRecvPacketResponse{})
-	suite.Require().NoError(err)
-
-	differentMsgData := &sdk.MsgData{
-		MsgType: sdk.MsgTypeURL(&channeltypes.MsgRecvPacket{}),
-		Data:    differentMsgResponseBz,
-	}
-
-	differentTxResponse, err := proto.Marshal(&sdk.TxMsgData{
-		Data: []*sdk.MsgData{differentMsgData},
-	})
-	suite.Require().NoError(err)
-
-	differentDeliverTx := abcitypes.ResponseDeliverTx{
-		Data: differentTxResponse,
-	}
-
-	differentResponses := tmprotostate.ABCIResponses{
-		DeliverTxs: []*abcitypes.ResponseDeliverTx{
-			&differentDeliverTx,
-		},
-	}
-
-	hash := tmstate.ABCIResponsesResultsHash(&responses)
-	differentHash := tmstate.ABCIResponsesResultsHash(&differentResponses)
-
-	suite.Require().NotEqual(hash, differentHash)
 }
