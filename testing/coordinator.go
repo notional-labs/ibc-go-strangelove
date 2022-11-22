@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	abci "github.com/tendermint/tendermint/abci/types"
 
-	"github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
+	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
 )
 
 var (
@@ -114,8 +114,8 @@ func (coord *Coordinator) SetupConnections(path *Path) {
 // SetupLocalhostConnections is a helper function to set the connection ID to the localhost connection
 // identifier on both the source and counterparty ends.
 func (coord *Coordinator) SetupLocalhostConnections(path *Path) {
-	path.EndpointA.ConnectionID = types.LocalhostID
-	path.EndpointB.ConnectionID = types.LocalhostID
+	path.EndpointA.ConnectionID = connectiontypes.LocalhostID
+	path.EndpointB.ConnectionID = connectiontypes.LocalhostID
 }
 
 // CreateConnection constructs and executes connection handshake messages in order to create
