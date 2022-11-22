@@ -202,12 +202,12 @@ func callContract(codeID []byte, ctx sdk.Context, store sdk.KVStore, msg []byte)
 		},
 	}
 
-	return callContractWithEnvAndMeter(codeID, &ctx, store, env, gasMeter, msg)
+	return callContractWithEnvAndMeter(codeID, ctx, store, env, gasMeter, msg)
 }
 
 // Calls vm.Execute with supplied environment and gas meter
 // TODO: Move this into a private method on the 28-wasm keeper
-func callContractWithEnvAndMeter(codeID cosmwasm.Checksum, ctx *sdk.Context, store cosmwasm.KVStore, env types.Env, gasMeter sdk.GasMeter, msg []byte) (*types.Response, error) {
+func callContractWithEnvAndMeter(codeID cosmwasm.Checksum, ctx sdk.Context, store sdk.KVStore, env types.Env, gasMeter sdk.GasMeter, msg []byte) (*types.Response, error) {
 	msgInfo := types.MessageInfo{
 		Sender: "",
 		Funds:  nil,
@@ -216,15 +216,15 @@ func callContractWithEnvAndMeter(codeID cosmwasm.Checksum, ctx *sdk.Context, sto
 	// mockFailureAPI := *api.NewMockFailureAPI()
 	// mockQuerier := api.MockQuerier{}
 	desercost := types.UFraction{Numerator: 1, Denominator: 1}
-	resp, gasUsed, err := WasmVM.Execute(codeID, env, msgInfo, msg, store, cosmwasm.GoAPI{}, nil, nil, gasMeter.Limit(), desercost)
-	if ctx != nil {
-		consumeGas(*ctx, gasUsed)
+	resp, gasUsed, err := WasmVM.Execute(codeID, env, msgInfo, msg, store, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
+	if &ctx != nil {
+		consumeGas(ctx, gasUsed)
 	}
 	return resp, err
 }
 
 // TODO: Move this into a public method on the 28-wasm keeper
-func queryContractWithStore(codeID cosmwasm.Checksum, store cosmwasm.KVStore, msg []byte) ([]byte, error) {
+func queryContractWithStore(codeID cosmwasm.Checksum, store sdk.KVStore, msg []byte) ([]byte, error) {
 	// TODO: fix this
 	// mockEnv := api.MockEnv()
 	// mockGasMeter := api.NewMockGasMeter(1)

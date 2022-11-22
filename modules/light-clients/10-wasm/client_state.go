@@ -1,11 +1,9 @@
 package wasm
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
-	wasmtypes "github.com/CosmWasm/wasmvm/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -41,19 +39,19 @@ func (c ClientState) Validate() error {
 //	2. ClientState written into store on go-side
 //	3. ConsensusState written into store on go-side
 func (c ClientState) TestSharedKVStore(ctx sdk.Context, store sdk.KVStore) error {
-	// Read "client_test_item" is initialized in contract instantiation (wasm-side) and read here (go-side)
-	value := store.Get([]byte("client_test_item"))
-	if(bytes.Compare(value, []byte("12783490")) != 0) {
-		return fmt.Errorf("Cannot read client_test_item set in contract's instantiation")
-	}
-	fmt.Println("Value: ", string(value[:]))
+	const ReadAndUpdateKvStore = "read_and_modify_kv_store_msg"
+	payload := make(map[string]map[string]interface{})
+	payload[ReadAndUpdateKvStore] = make(map[string]interface{})
 
-	// Call Execute, read ClientState/ConsensusState, modify, read here
-	_, err := callContract(c.CodeId, ctx, store, []byte("{}"))
+	encodedData, err := json.Marshal(payload)
+	if err != nil {
+		return sdkerrors.Wrapf(ErrUnableToMarshalPayload, fmt.Sprintf("underlying error: %s", err.Error()))
+	}
+	
+	_, err = callContract(c.CodeId, ctx, store, encodedData)
 	if(err != nil){
 		return err
 	}
-
 
 	return nil
 }
@@ -92,41 +90,7 @@ func (c ClientState) ExportMetadata(store sdk.KVStore) []exported.GenesisMetadat
 }
 
 func (c ClientState) ZeroCustomFields() exported.ClientState {
-	const ZeroCustomFields = "zerocustomfields"
-	payload := make(map[string]map[string]interface{})
-	payload[ZeroCustomFields] = make(map[string]interface{})
-	inner := payload[ZeroCustomFields]
-	inner["me"] = c
-
-	encodedData, err := json.Marshal(payload)
-	if err != nil {
-		// TODO: Handle error
-	}
-
-	gasMeter := sdk.NewGasMeter(maxGasLimit)
-	mockEnv := wasmtypes.Env{
-		Block: wasmtypes.BlockInfo{
-			Height:  123,
-			Time:    1578939743_987654321,
-			ChainID: "foobar",
-		},
-		Transaction: &wasmtypes.TransactionInfo{
-			Index: 4,
-		},
-		Contract: wasmtypes.ContractInfo{
-			Address: "contract",
-		},
-	}
-	out, err := callContractWithEnvAndMeter(c.CodeId, nil, &FailKVStore{}, mockEnv, gasMeter, encodedData)
-	if err != nil {
-		// TODO: Handle error
-	}
-	output := clientStateCallResponse{}
-	if err := json.Unmarshal(out.Data, &output); err != nil {
-		// TODO: Handle error
-	}
-	output.resetImmutables(&c)
-	return output.Me
+	return &c
 }
 
 func (c ClientState) GetTimestampAtHeight(

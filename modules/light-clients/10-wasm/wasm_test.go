@@ -10,13 +10,13 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/ibc-go/v5/modules/core/02-client/types"
+	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v5/modules/core/exported"
 	wasm "github.com/cosmos/ibc-go/v5/modules/light-clients/10-wasm"
 	ibctesting "github.com/cosmos/ibc-go/v5/testing"
 	"github.com/cosmos/ibc-go/v5/testing/simapp"
 	"github.com/stretchr/testify/suite"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
 )
 
 type WasmTestSuite struct {
@@ -28,6 +28,11 @@ type WasmTestSuite struct {
 	now         time.Time
 	store       sdk.KVStore
 }
+
+var (
+	RepositoryInitial = "go_side_added"
+	RepositoryFinal = RepositoryInitial + "_grandpa_contract_added"
+)
 
 func (suite *WasmTestSuite) SetupTest() {
 	suite.coordinator = ibctesting.NewCoordinator(suite.T(), 2)
@@ -66,6 +71,8 @@ func (suite *WasmTestSuite) SetupTest() {
 		Data: []byte("ClientStateData"),
 		CodeId: codeId,
 		LatestHeight: types.NewHeight(1,1),
+		ProofSpecs: nil,
+		Repository: RepositoryInitial,
 	}
 
 	consensusState := wasm.ConsensusState{
@@ -86,7 +93,7 @@ func (suite *WasmTestSuite) SetupTest() {
 	// "client_test_item" is initialized in contract instantiation (wasm-side) and read here (go-side)
 	value := suite.store.Get(clientTestItem)
 	suite.Require().NotNil(value)
-	suite.Require().Equal(value, finalNumber)
+	suite.Require().Equal(finalNumber, value)
 	fmt.Println("Value: ", string(value[:]))
 
 	// Replicate the 02-client CreateClient code
@@ -96,6 +103,15 @@ func (suite *WasmTestSuite) SetupTest() {
 }
 
 func (suite *WasmTestSuite) TestWasmExecute() {
+	clientState, err := types.UnmarshalClientState(suite.cdc, suite.store.Get(host.ClientStateKey()))
+	suite.Require().NoError(err)
+
+	err = clientState.(*wasm.ClientState).TestSharedKVStore(suite.ctx, suite.store)
+	suite.Require().NoError(err)
+
+	clientState2, err := types.UnmarshalClientState(suite.cdc, suite.store.Get(host.ClientStateKey()))
+	suite.Require().NoError(err)
+	suite.Require().Equal(RepositoryFinal, clientState2.(*wasm.ClientState).Repository)
 }
 
 func TestWasmTestSuite(t *testing.T) {
