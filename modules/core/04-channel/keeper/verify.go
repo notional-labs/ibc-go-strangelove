@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"bytes"
+	"reflect"
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -43,13 +44,32 @@ func (k Keeper) validateChanOpenInit(ctx sdk.Context, connectionID string, order
 	return nil
 }
 
-// verifyChannelState performs the appropriate channel state verification logic for either a localhost connection
+// validateChanCloseInit performs the appropriate validation logic for ChanCloseInit.
+func (k Keeper) validateChanCloseInit(ctx sdk.Context, connectionID string) error {
+	if connectionID != connectiontypes.LocalhostID {
+		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionID)
+		if !found {
+			return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, connectionID)
+		}
+
+		if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
+			return sdkerrors.Wrapf(
+				connectiontypes.ErrInvalidConnectionState,
+				"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
+			)
+		}
+	}
+
+	return nil
+}
+
+// verifyChannelEnd performs the appropriate channel state verification logic for either a localhost connection
 // or a counterparty chain.
-func (k Keeper) verifyChannelState(
+func (k Keeper) verifyChannelEnd(
 	ctx sdk.Context,
-	expectedChannel types.Channel,
 	portID string,
 	channelID string,
+	expectedChannel types.Channel,
 	proofHeight exported.Height,
 	proof []byte,
 ) error {
@@ -61,11 +81,11 @@ func (k Keeper) verifyChannelState(
 
 		// check that the counterparty channel actually exists in this chain's channelKeeper store and is in the expected state
 		if !ok {
-			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel state verification, counterparty channel does not exist")
+			return sdkerrors.Wrap(types.ErrChannelNotFound, "failed localhost channel verification, counterparty channel does not exist")
 		}
 
-		if actualChannel.State != expectedChannel.State {
-			return sdkerrors.Wrapf(types.ErrInvalidChannelState, "failed localhost channel state verification, channel state is not %s (got %s)", expectedChannel.State, actualChannel.State)
+		if !reflect.DeepEqual(actualChannel, expectedChannel) {
+			return sdkerrors.Wrapf(types.ErrInvalidChannel, "failed localhost channel verification, (%s ≠ %s)", expectedChannel, actualChannel)
 		}
 	} else {
 		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionID)
@@ -119,12 +139,11 @@ func (k Keeper) verifyChannelState(
 func (k Keeper) validatePacketSend(ctx sdk.Context, connectionID string, packet exported.PacketI) error {
 	if connectionID == connectiontypes.LocalhostID {
 		// check if packet is timed out
-		latestHeight := uint64(ctx.BlockHeight())
-		timeoutHeight := packet.GetTimeoutHeight()
-		if !timeoutHeight.IsZero() && latestHeight >= timeoutHeight.GetRevisionHeight() {
+		latestHeight := clienttypes.GetSelfHeight(ctx)
+		if !packet.GetTimeoutHeight().IsZero() && latestHeight.GTE(packet.GetTimeoutHeight()) {
 			return sdkerrors.Wrapf(
 				types.ErrPacketTimeout,
-				"receiving chain block height >= packet timeout height (%d >= %s)", latestHeight, timeoutHeight,
+				"receiving chain block height >= packet timeout height (%d >= %s)", latestHeight, packet.GetTimeoutHeight(),
 			)
 		}
 
@@ -290,34 +309,9 @@ func (k Keeper) verifyTimeoutPacket(
 	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
 		// check that timeout height or timeout timestamp has passed on the other end
 		timeoutHeight := packet.GetTimeoutHeight()
-		if (timeoutHeight.IsZero() || uint64(ctx.BlockHeight()) < timeoutHeight.GetRevisionHeight()) &&
+		if (timeoutHeight.IsZero() || clienttypes.GetSelfHeight(ctx).LT(timeoutHeight)) &&
 			(packet.GetTimeoutTimestamp() == 0 || uint64(ctx.BlockTime().UnixNano()) < packet.GetTimeoutTimestamp()) {
 			return sdkerrors.Wrap(types.ErrPacketTimeout, "packet timeout has not been reached for height or timestamp")
-		}
-
-		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-		if len(commitment) == 0 {
-			EmitTimeoutPacketEvent(ctx, packet, channel)
-			// This error indicates that the timeout has already been relayed
-			// or there is a misconfigured relayer attempting to prove a timeout
-			// for a packet never sent. Core IBC will treat this error as a no-op in order to
-			// prevent an entire relay transaction from failing and consuming unnecessary fees.
-			return types.ErrNoOpMsg
-		}
-
-		if channel.State != types.OPEN {
-			return sdkerrors.Wrapf(
-				types.ErrInvalidChannelState,
-				"channel state is not OPEN (got %s)", channel.State.String(),
-			)
-		}
-
-		packetCommitment := types.CommitPacket(k.cdc, packet)
-
-		// verify we sent the packet and haven't cleared it out yet
-		if !bytes.Equal(commitment, packetCommitment) {
-			return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
 		}
 
 		switch channel.Ordering {
@@ -342,7 +336,7 @@ func (k Keeper) verifyTimeoutPacket(
 		case types.UNORDERED:
 			_, ok := k.GetPacketReceipt(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
 			if ok {
-				return sdkerrors.Wrap(types.ErrAcknowledgementExists, "failed localhost packet receipt absence verification")
+				return sdkerrors.Wrap(types.ErrPacketReceived, "failed localhost packet receipt absence verification")
 			}
 		default:
 			panic(sdkerrors.Wrapf(types.ErrInvalidChannelOrdering, channel.Ordering.String()))
@@ -369,31 +363,6 @@ func (k Keeper) verifyTimeoutPacket(
 	if (timeoutHeight.IsZero() || proofHeight.LT(timeoutHeight)) &&
 		(packet.GetTimeoutTimestamp() == 0 || proofTimestamp < packet.GetTimeoutTimestamp()) {
 		return sdkerrors.Wrap(types.ErrPacketTimeout, "packet timeout has not been reached for height or timestamp")
-	}
-
-	commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-	if len(commitment) == 0 {
-		EmitTimeoutPacketEvent(ctx, packet, channel)
-		// This error indicates that the timeout has already been relayed
-		// or there is a misconfigured relayer attempting to prove a timeout
-		// for a packet never sent. Core IBC will treat this error as a no-op in order to
-		// prevent an entire relay transaction from failing and consuming unnecessary fees.
-		return types.ErrNoOpMsg
-	}
-
-	if channel.State != types.OPEN {
-		return sdkerrors.Wrapf(
-			types.ErrInvalidChannelState,
-			"channel state is not OPEN (got %s)", channel.State.String(),
-		)
-	}
-
-	packetCommitment := types.CommitPacket(k.cdc, packet)
-
-	// verify we sent the packet and haven't cleared it out yet
-	if !bytes.Equal(commitment, packetCommitment) {
-		return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
 	}
 
 	switch channel.Ordering {
@@ -439,24 +408,6 @@ func (k Keeper) verifyTimeoutOnClose(
 	proofClosed []byte,
 ) error {
 	if channel.ConnectionHops[0] == connectiontypes.LocalhostID {
-		commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-		if len(commitment) == 0 {
-			EmitTimeoutPacketEvent(ctx, packet, channel)
-			// This error indicates that the timeout has already been relayed
-			// or there is a misconfigured relayer attempting to prove a timeout
-			// for a packet never sent. Core IBC will treat this error as a no-op in order to
-			// prevent an entire relay transaction from failing and consuming unnecessary fees.
-			return types.ErrNoOpMsg
-		}
-
-		packetCommitment := types.CommitPacket(k.cdc, packet)
-
-		// verify we sent the packet and haven't cleared it out yet
-		if !bytes.Equal(commitment, packetCommitment) {
-			return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
-		}
-
 		counterpartyChan, found := k.GetChannel(ctx, packet.GetDestPort(), packet.GetDestChannel())
 		if !found {
 			return sdkerrors.Wrapf(types.ErrChannelNotFound, "port ID (%s) channel ID (%s)", packet.GetDestPort(), packet.GetDestChannel())
@@ -487,7 +438,7 @@ func (k Keeper) verifyTimeoutOnClose(
 		case types.UNORDERED:
 			_, ok := k.GetPacketReceipt(ctx, packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
 			if ok {
-				return sdkerrors.Wrapf(types.ErrAcknowledgementExists, "failed localhost packet receipt absence verification")
+				return sdkerrors.Wrapf(types.ErrPacketReceived, "failed localhost packet receipt absence verification")
 			}
 		default:
 			panic(sdkerrors.Wrapf(types.ErrInvalidChannelOrdering, channel.Ordering.String()))
@@ -499,24 +450,6 @@ func (k Keeper) verifyTimeoutOnClose(
 	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
 	if !found {
 		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-	}
-
-	commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-
-	if len(commitment) == 0 {
-		EmitTimeoutPacketEvent(ctx, packet, channel)
-		// This error indicates that the timeout has already been relayed
-		// or there is a misconfigured relayer attempting to prove a timeout
-		// for a packet never sent. Core IBC will treat this error as a no-op in order to
-		// prevent an entire relay transaction from failing and consuming unnecessary fees.
-		return types.ErrNoOpMsg
-	}
-
-	packetCommitment := types.CommitPacket(k.cdc, packet)
-
-	// verify we sent the packet and haven't cleared it out yet
-	if !bytes.Equal(commitment, packetCommitment) {
-		return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
 	}
 
 	counterpartyHops := []string{connectionEnd.GetCounterparty().GetConnectionID()}

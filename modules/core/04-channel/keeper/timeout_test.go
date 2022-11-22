@@ -113,7 +113,10 @@ func (suite *KeeperTestSuite) TestTimeoutPacket() {
 				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
 				types.NewChannel(types.OPEN, types.ORDERED, types.NewCounterparty(path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID), []string{connIDA}, path.EndpointA.ChannelConfig.Version),
 			)
+			// pass packet commitment check
 			packet = types.NewPacket(ibctesting.MockPacketData, 1, path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, timeoutHeight, disabledTimeoutTimestamp)
+			commitment := types.CommitPacket(suite.chainA.GetSimApp().AppCodec(), packet)
+			suite.chainA.App.GetIBCKeeper().ChannelKeeper.SetPacketCommitment(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, 1, commitment)
 		}, false},
 		{"timeout", func() {
 			expError = types.ErrPacketTimeout
@@ -642,10 +645,11 @@ func (suite *KeeperTestSuite) TestLocalhostTimeoutPacket() {
 			err := path.EndpointA.SendLocalhostPacket(packet)
 			suite.Require().NoError(err)
 		}, false},
-		{"packet already received", func() {
+		{"packet already received: ORDERED", func() {
 			expError = types.ErrPacketReceived
 			path.SetChannelOrdered()
 
+			// increment the nextSeqRecv to mock that the packet is already received when we send a packet with seq 1
 			nextSeqRecv = 2
 
 			suite.coordinator.SetupLocalhost(path)
@@ -692,8 +696,8 @@ func (suite *KeeperTestSuite) TestLocalhostTimeoutPacket() {
 			// increment the current chain height & consensus time
 			suite.coordinator.CommitBlock(suite.chainA)
 		}, false},
-		{"packet ack verification failed", func() {
-			expError = types.ErrAcknowledgementExists
+		{"packet already received: UNORDERED", func() {
+			expError = types.ErrPacketReceived
 			suite.coordinator.SetupLocalhost(path)
 
 			// we need to set a timeout height that is greater than the current height
@@ -1042,8 +1046,8 @@ func (suite *KeeperTestSuite) TestLocalhostTimeoutOnClose() {
 			path.EndpointB.SetLocalhostChannelClosed()
 			chanCap = suite.chainA.GetChannelCapability(path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
 		}, false},
-		{"packet ack verification failed", func() {
-			expError = types.ErrAcknowledgementExists
+		{"packet already received: UNORDERED", func() {
+			expError = types.ErrPacketReceived
 			suite.coordinator.SetupLocalhost(path)
 
 			// we need to set a timeout height & timestamp that is greater than the current time/height

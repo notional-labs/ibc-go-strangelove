@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -48,6 +49,31 @@ func (k Keeper) TimeoutPacket(
 			types.ErrInvalidPacket,
 			"packet destination channel doesn't match the counterparty's channel (%s ≠ %s)", packet.GetDestChannel(), channel.Counterparty.ChannelId,
 		)
+	}
+
+	commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+	if len(commitment) == 0 {
+		EmitTimeoutPacketEvent(ctx, packet, channel)
+		// This error indicates that the timeout has already been relayed
+		// or there is a misconfigured relayer attempting to prove a timeout
+		// for a packet never sent. Core IBC will treat this error as a no-op in order to
+		// prevent an entire relay transaction from failing and consuming unnecessary fees.
+		return types.ErrNoOpMsg
+	}
+
+	if channel.State != types.OPEN {
+		return sdkerrors.Wrapf(
+			types.ErrInvalidChannelState,
+			"channel state is not OPEN (got %s)", channel.State.String(),
+		)
+	}
+
+	packetCommitment := types.CommitPacket(k.cdc, packet)
+
+	// verify we sent the packet and haven't cleared it out yet
+	if !bytes.Equal(commitment, packetCommitment) {
+		return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
 	}
 
 	// perform the packet timeout verification
@@ -145,6 +171,24 @@ func (k Keeper) TimeoutOnClose(
 			types.ErrInvalidPacket,
 			"packet destination channel doesn't match the counterparty's channel (%s ≠ %s)", packet.GetDestChannel(), channel.Counterparty.ChannelId,
 		)
+	}
+
+	commitment := k.GetPacketCommitment(ctx, packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
+
+	if len(commitment) == 0 {
+		EmitTimeoutPacketEvent(ctx, packet, channel)
+		// This error indicates that the timeout has already been relayed
+		// or there is a misconfigured relayer attempting to prove a timeout
+		// for a packet never sent. Core IBC will treat this error as a no-op in order to
+		// prevent an entire relay transaction from failing and consuming unnecessary fees.
+		return types.ErrNoOpMsg
+	}
+
+	packetCommitment := types.CommitPacket(k.cdc, packet)
+
+	// verify we sent the packet and haven't cleared it out yet
+	if !bytes.Equal(commitment, packetCommitment) {
+		return sdkerrors.Wrapf(types.ErrInvalidPacket, "packet commitment bytes are not equal: got (%v), expected (%v)", commitment, packetCommitment)
 	}
 
 	// perform the timeout on close verification

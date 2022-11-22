@@ -8,7 +8,6 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
 
-	connectiontypes "github.com/cosmos/ibc-go/v5/modules/core/03-connection/types"
 	"github.com/cosmos/ibc-go/v5/modules/core/04-channel/types"
 	porttypes "github.com/cosmos/ibc-go/v5/modules/core/05-port/types"
 	host "github.com/cosmos/ibc-go/v5/modules/core/24-host"
@@ -112,7 +111,7 @@ func (k Keeper) ChanOpenTry(
 	}
 
 	// perform channel state verification
-	err := k.verifyChannelState(ctx, expectedChannel, counterparty.PortId, counterparty.ChannelId, proofHeight, proofInit)
+	err := k.verifyChannelEnd(ctx, counterparty.PortId, counterparty.ChannelId, expectedChannel, proofHeight, proofInit)
 	if err != nil {
 		return "", nil, err
 	}
@@ -192,7 +191,7 @@ func (k Keeper) ChanOpenAck(
 	}
 
 	// perform channel state verification
-	err := k.verifyChannelState(ctx, expectedChannel, channel.Counterparty.PortId, counterpartyChannelID, proofHeight, proofTry)
+	err := k.verifyChannelEnd(ctx, channel.Counterparty.PortId, counterpartyChannelID, expectedChannel, proofHeight, proofTry)
 	if err != nil {
 		return err
 	}
@@ -267,7 +266,7 @@ func (k Keeper) ChanOpenConfirm(
 	}
 
 	// perform channel state verification
-	err := k.verifyChannelState(ctx, expectedChannel, channel.Counterparty.PortId, channel.Counterparty.ChannelId, proofHeight, proofAck)
+	err := k.verifyChannelEnd(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId, expectedChannel, proofHeight, proofAck)
 	if err != nil {
 		return err
 	}
@@ -324,16 +323,9 @@ func (k Keeper) ChanCloseInit(
 		return sdkerrors.Wrap(types.ErrInvalidChannelState, "channel is already CLOSED")
 	}
 
-	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, channel.ConnectionHops[0])
-	if !found {
-		return sdkerrors.Wrap(connectiontypes.ErrConnectionNotFound, channel.ConnectionHops[0])
-	}
-
-	if connectionEnd.GetState() != int32(connectiontypes.OPEN) {
-		return sdkerrors.Wrapf(
-			connectiontypes.ErrInvalidConnectionState,
-			"connection state is not OPEN (got %s)", connectiontypes.State(connectionEnd.GetState()).String(),
-		)
+	err := k.validateChanCloseInit(ctx, channel.ConnectionHops[0])
+	if err != nil {
+		return err
 	}
 
 	k.Logger(ctx).Info("channel state updated", "port-id", portID, "channel-id", channelID, "previous-state", channel.State.String(), "new-state", "CLOSED")
@@ -386,7 +378,7 @@ func (k Keeper) ChanCloseConfirm(
 	}
 
 	// perform channel state verification
-	err := k.verifyChannelState(ctx, expectedChannel, channel.Counterparty.PortId, channel.Counterparty.ChannelId, proofHeight, proofInit)
+	err := k.verifyChannelEnd(ctx, channel.Counterparty.PortId, channel.Counterparty.ChannelId, expectedChannel, proofHeight, proofInit)
 	if err != nil {
 		return err
 	}
