@@ -47,6 +47,7 @@ func (im IBCMiddleware) OnChanOpenInit(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	version string,
+	middlewareData ibcexported.MiddlewareData,
 ) (string, error) {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return "", types.ErrControllerSubModuleDisabled
@@ -65,7 +66,7 @@ func (im IBCMiddleware) OnChanOpenInit(
 	// the version returned is discarded as the ica-auth module does not have permission to edit the version string.
 	// ics27 will always return the version string containing the Metadata struct which is created during the `RegisterInterchainAccount` call.
 	if im.app != nil && im.keeper.IsMiddlewareEnabled(ctx, portID, connectionHops[0]) {
-		if _, err := im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID, nil, counterparty, version); err != nil {
+		if _, err := im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID, nil, counterparty, version, middlewareData); err != nil {
 			return "", err
 		}
 	}
@@ -83,6 +84,7 @@ func (im IBCMiddleware) OnChanOpenTry(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) (string, error) {
 	return "", sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "channel handshake must be initiated by controller chain")
 }
@@ -99,6 +101,7 @@ func (im IBCMiddleware) OnChanOpenAck(
 	channelID string,
 	counterpartyChannelID string,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
@@ -115,7 +118,7 @@ func (im IBCMiddleware) OnChanOpenAck(
 
 	// call underlying app's OnChanOpenAck callback with the counterparty app version.
 	if im.app != nil && im.keeper.IsMiddlewareEnabled(ctx, portID, connectionID) {
-		return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion)
+		return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion, middlewareData)
 	}
 
 	return nil
@@ -126,6 +129,7 @@ func (im IBCMiddleware) OnChanOpenConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "channel handshake must be initiated by controller chain")
 }
@@ -135,6 +139,7 @@ func (im IBCMiddleware) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	// Disallow user-initiated channel closing for interchain account channels
 	return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "user cannot close channel")
@@ -145,6 +150,7 @@ func (im IBCMiddleware) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if err := im.keeper.OnChanCloseConfirm(ctx, portID, channelID); err != nil {
 		return err
@@ -156,7 +162,7 @@ func (im IBCMiddleware) OnChanCloseConfirm(
 	}
 
 	if im.app != nil && im.keeper.IsMiddlewareEnabled(ctx, portID, connectionID) {
-		return im.app.OnChanCloseConfirm(ctx, portID, channelID)
+		return im.app.OnChanCloseConfirm(ctx, portID, channelID, middlewareData)
 	}
 
 	return nil
@@ -167,6 +173,7 @@ func (im IBCMiddleware) OnRecvPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	_ sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) ibcexported.Acknowledgement {
 	err := sdkerrors.Wrapf(icatypes.ErrInvalidChannelFlow, "cannot receive packet on controller chain")
 	ack := channeltypes.NewErrorAcknowledgement(err)
@@ -180,6 +187,7 @@ func (im IBCMiddleware) OnAcknowledgementPacket(
 	packet channeltypes.Packet,
 	acknowledgement []byte,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
@@ -192,7 +200,7 @@ func (im IBCMiddleware) OnAcknowledgementPacket(
 
 	// call underlying app's OnAcknowledgementPacket callback.
 	if im.app != nil && im.keeper.IsMiddlewareEnabled(ctx, packet.GetSourcePort(), connectionID) {
-		return im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer)
+		return im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer, middlewareData)
 	}
 
 	return nil
@@ -203,6 +211,7 @@ func (im IBCMiddleware) OnTimeoutPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
@@ -218,7 +227,7 @@ func (im IBCMiddleware) OnTimeoutPacket(
 	}
 
 	if im.app != nil && im.keeper.IsMiddlewareEnabled(ctx, packet.GetSourcePort(), connectionID) {
-		return im.app.OnTimeoutPacket(ctx, packet, relayer)
+		return im.app.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 	}
 
 	return nil
@@ -233,6 +242,7 @@ func (im IBCMiddleware) SendPacket(
 	timeoutHeight clienttypes.Height,
 	timeoutTimestamp uint64,
 	data []byte,
+	middlewareData ibcexported.MiddlewareData,
 ) (uint64, error) {
 	panic("SendPacket not supported for ICA controller module. Please use SendTx")
 }
@@ -243,11 +253,17 @@ func (im IBCMiddleware) WriteAcknowledgement(
 	chanCap *capabilitytypes.Capability,
 	packet ibcexported.PacketI,
 	ack ibcexported.Acknowledgement,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	panic("WriteAcknowledgement not supported for ICA controller module")
 }
 
 // GetAppVersion returns the interchain accounts metadata.
-func (im IBCMiddleware) GetAppVersion(ctx sdk.Context, portID, channelID string) (string, bool) {
+func (im IBCMiddleware) GetAppVersion(
+	ctx sdk.Context,
+	portID string,
+	channelID string,
+	middlewareData ibcexported.MiddlewareData,
+) (string, bool) {
 	return im.keeper.GetAppVersion(ctx, portID, channelID)
 }

@@ -27,6 +27,7 @@ func (k Keeper) SendPacket(
 	timeoutHeight clienttypes.Height,
 	timeoutTimestamp uint64,
 	data []byte,
+	middlewareData exported.MiddlewareData,
 ) (uint64, error) {
 	channel, found := k.GetChannel(ctx, sourcePort, sourceChannel)
 	if !found {
@@ -290,6 +291,7 @@ func (k Keeper) WriteAcknowledgement(
 	chanCap *capabilitytypes.Capability,
 	packet exported.PacketI,
 	acknowledgement exported.Acknowledgement,
+	middlewareData exported.MiddlewareData,
 ) error {
 	channel, found := k.GetChannel(ctx, packet.GetDestPort(), packet.GetDestChannel())
 	if !found {

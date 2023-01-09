@@ -87,7 +87,7 @@ func (k Keeper) SetChannel(ctx sdk.Context, portID, channelID string, channel ty
 }
 
 // GetAppVersion gets the version for the specified channel.
-func (k Keeper) GetAppVersion(ctx sdk.Context, portID, channelID string) (string, bool) {
+func (k Keeper) GetAppVersion(ctx sdk.Context, portID, channelID string, middlewareData exported.MiddlewareData) (string, bool) {
 	channel, found := k.GetChannel(ctx, portID, channelID)
 	if !found {
 		return "", false

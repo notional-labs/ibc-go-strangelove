@@ -70,7 +70,7 @@ func (suite *KeeperTestSuite) TestGetAppVersion() {
 	path := ibctesting.NewPath(suite.chainA, suite.chainB)
 	suite.coordinator.SetupConnections(path)
 
-	version, found := suite.chainA.App.GetIBCKeeper().ChannelKeeper.GetAppVersion(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+	version, found := suite.chainA.App.GetIBCKeeper().ChannelKeeper.GetAppVersion(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, nil)
 	suite.Require().False(found)
 	suite.Require().Empty(version)
 
@@ -78,7 +78,7 @@ func (suite *KeeperTestSuite) TestGetAppVersion() {
 	err := path.EndpointA.ChanOpenInit()
 	suite.NoError(err)
 
-	channelVersion, found := suite.chainA.App.GetIBCKeeper().ChannelKeeper.GetAppVersion(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+	channelVersion, found := suite.chainA.App.GetIBCKeeper().ChannelKeeper.GetAppVersion(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, nil)
 	suite.Require().True(found)
 	suite.Require().Equal(ibcmock.Version, channelVersion)
 }

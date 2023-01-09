@@ -33,13 +33,14 @@ func NewIBCModule(appModule *AppModule, app *IBCApp) IBCModule {
 func (im IBCModule) OnChanOpenInit(
 	ctx sdk.Context, order channeltypes.Order, connectionHops []string, portID string,
 	channelID string, chanCap *capabilitytypes.Capability, counterparty channeltypes.Counterparty, version string,
+	middlewareData exported.MiddlewareData,
 ) (string, error) {
 	if strings.TrimSpace(version) == "" {
 		version = Version
 	}
 
 	if im.IBCApp.OnChanOpenInit != nil {
-		return im.IBCApp.OnChanOpenInit(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, version)
+		return im.IBCApp.OnChanOpenInit(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, version, middlewareData)
 	}
 
 	if chanCap != nil {
@@ -56,9 +57,11 @@ func (im IBCModule) OnChanOpenInit(
 func (im IBCModule) OnChanOpenTry(
 	ctx sdk.Context, order channeltypes.Order, connectionHops []string, portID string,
 	channelID string, chanCap *capabilitytypes.Capability, counterparty channeltypes.Counterparty, counterpartyVersion string,
+	middlewareData exported.MiddlewareData,
 ) (version string, err error) {
 	if im.IBCApp.OnChanOpenTry != nil {
-		return im.IBCApp.OnChanOpenTry(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, counterpartyVersion)
+		return im.IBCApp.OnChanOpenTry(ctx, order, connectionHops, portID,
+			channelID, chanCap, counterparty, counterpartyVersion, middlewareData)
 	}
 
 	if chanCap != nil {
@@ -72,45 +75,72 @@ func (im IBCModule) OnChanOpenTry(
 }
 
 // OnChanOpenAck implements the IBCModule interface.
-func (im IBCModule) OnChanOpenAck(ctx sdk.Context, portID string, channelID string, counterpartyChannelID string, counterpartyVersion string) error {
+func (im IBCModule) OnChanOpenAck(
+	ctx sdk.Context,
+	portID string,
+	channelID string,
+	counterpartyChannelID string,
+	counterpartyVersion string,
+	middlewareData exported.MiddlewareData,
+) error {
 	if im.IBCApp.OnChanOpenAck != nil {
-		return im.IBCApp.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion)
+		return im.IBCApp.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion, middlewareData)
 	}
 
 	return nil
 }
 
 // OnChanOpenConfirm implements the IBCModule interface.
-func (im IBCModule) OnChanOpenConfirm(ctx sdk.Context, portID, channelID string) error {
+func (im IBCModule) OnChanOpenConfirm(
+	ctx sdk.Context,
+	portID string,
+	channelID string,
+	middlewareData exported.MiddlewareData,
+) error {
 	if im.IBCApp.OnChanOpenConfirm != nil {
-		return im.IBCApp.OnChanOpenConfirm(ctx, portID, channelID)
+		return im.IBCApp.OnChanOpenConfirm(ctx, portID, channelID, middlewareData)
 	}
 
 	return nil
 }
 
 // OnChanCloseInit implements the IBCModule interface.
-func (im IBCModule) OnChanCloseInit(ctx sdk.Context, portID, channelID string) error {
+func (im IBCModule) OnChanCloseInit(
+	ctx sdk.Context,
+	portID string,
+	channelID string,
+	middlewareData exported.MiddlewareData,
+) error {
 	if im.IBCApp.OnChanCloseInit != nil {
-		return im.IBCApp.OnChanCloseInit(ctx, portID, channelID)
+		return im.IBCApp.OnChanCloseInit(ctx, portID, channelID, middlewareData)
 	}
 
 	return nil
 }
 
 // OnChanCloseConfirm implements the IBCModule interface.
-func (im IBCModule) OnChanCloseConfirm(ctx sdk.Context, portID, channelID string) error {
+func (im IBCModule) OnChanCloseConfirm(
+	ctx sdk.Context,
+	portID string,
+	channelID string,
+	middlewareData exported.MiddlewareData,
+) error {
 	if im.IBCApp.OnChanCloseConfirm != nil {
-		return im.IBCApp.OnChanCloseConfirm(ctx, portID, channelID)
+		return im.IBCApp.OnChanCloseConfirm(ctx, portID, channelID, middlewareData)
 	}
 
 	return nil
 }
 
 // OnRecvPacket implements the IBCModule interface.
-func (im IBCModule) OnRecvPacket(ctx sdk.Context, packet channeltypes.Packet, relayer sdk.AccAddress) exported.Acknowledgement {
+func (im IBCModule) OnRecvPacket(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	relayer sdk.AccAddress,
+	middlewareData exported.MiddlewareData,
+) exported.Acknowledgement {
 	if im.IBCApp.OnRecvPacket != nil {
-		return im.IBCApp.OnRecvPacket(ctx, packet, relayer)
+		return im.IBCApp.OnRecvPacket(ctx, packet, relayer, middlewareData)
 	}
 
 	// set state by claiming capability to check if revert happens return
@@ -131,9 +161,15 @@ func (im IBCModule) OnRecvPacket(ctx sdk.Context, packet channeltypes.Packet, re
 }
 
 // OnAcknowledgementPacket implements the IBCModule interface.
-func (im IBCModule) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Packet, acknowledgement []byte, relayer sdk.AccAddress) error {
+func (im IBCModule) OnAcknowledgementPacket(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	acknowledgement []byte,
+	relayer sdk.AccAddress,
+	middlewareData exported.MiddlewareData,
+) error {
 	if im.IBCApp.OnAcknowledgementPacket != nil {
-		return im.IBCApp.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer)
+		return im.IBCApp.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer, middlewareData)
 	}
 
 	capName := GetMockAckCanaryCapabilityName(packet)
@@ -147,9 +183,14 @@ func (im IBCModule) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes
 }
 
 // OnTimeoutPacket implements the IBCModule interface.
-func (im IBCModule) OnTimeoutPacket(ctx sdk.Context, packet channeltypes.Packet, relayer sdk.AccAddress) error {
+func (im IBCModule) OnTimeoutPacket(
+	ctx sdk.Context,
+	packet channeltypes.Packet,
+	relayer sdk.AccAddress,
+	middlewareData exported.MiddlewareData,
+) error {
 	if im.IBCApp.OnTimeoutPacket != nil {
-		return im.IBCApp.OnTimeoutPacket(ctx, packet, relayer)
+		return im.IBCApp.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 	}
 
 	capName := GetMockTimeoutCanaryCapabilityName(packet)

@@ -37,3 +37,7 @@ type Acknowledgement interface {
 	Success() bool
 	Acknowledgement() []byte
 }
+
+// MiddlewareData is a KV parameter used for passing
+// arbitrary data internally between IBC middlewares.
+type MiddlewareData map[string]any

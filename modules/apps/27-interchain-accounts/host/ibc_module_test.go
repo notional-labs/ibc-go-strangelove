@@ -164,6 +164,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenTry() {
 				suite.chainB.GetSimApp().ICAAuthModule.IBCApp.OnChanOpenTry = func(ctx sdk.Context, order channeltypes.Order, connectionHops []string,
 					portID, channelID string, chanCap *capabilitytypes.Capability,
 					counterparty channeltypes.Counterparty, counterpartyVersion string,
+					middlewareData exported.MiddlewareData,
 				) (string, error) {
 					return "", fmt.Errorf("mock ica auth fails")
 				}
@@ -214,7 +215,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenTry() {
 			suite.Require().True(ok)
 
 			version, err := cbs.OnChanOpenTry(suite.chainB.GetContext(), channel.Ordering, channel.GetConnectionHops(),
-				path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, chanCap, channel.Counterparty, path.EndpointA.ChannelConfig.Version,
+				path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, chanCap, channel.Counterparty, path.EndpointA.ChannelConfig.Version, nil,
 			)
 
 			if tc.expPass {
@@ -284,6 +285,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenConfirm() {
 				// mock module callback should not be called on host side
 				suite.chainB.GetSimApp().ICAAuthModule.IBCApp.OnChanOpenConfirm = func(
 					ctx sdk.Context, portID, channelID string,
+					middlewareData exported.MiddlewareData,
 				) error {
 					return fmt.Errorf("mock ica auth fails")
 				}
@@ -316,7 +318,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenConfirm() {
 			cbs, ok := suite.chainB.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnChanOpenConfirm(suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+			err = cbs.OnChanOpenConfirm(suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -342,7 +344,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanCloseInit() {
 	suite.Require().True(ok)
 
 	err = cbs.OnChanCloseInit(
-		suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID,
+		suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, nil,
 	)
 
 	suite.Require().Error(err)
@@ -379,7 +381,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanCloseConfirm() {
 			suite.Require().True(ok)
 
 			err = cbs.OnChanCloseConfirm(
-				suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID)
+				suite.chainB.GetContext(), path.EndpointB.ChannelConfig.PortID, path.EndpointB.ChannelID, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -408,7 +410,7 @@ func (suite *InterchainAccountsTestSuite) TestOnRecvPacket() {
 		{
 			"success with ICA auth module callback failure", func() {
 				suite.chainB.GetSimApp().ICAAuthModule.IBCApp.OnRecvPacket = func(
-					ctx sdk.Context, packet channeltypes.Packet, relayer sdk.AccAddress,
+					ctx sdk.Context, packet channeltypes.Packet, relayer sdk.AccAddress, middlewareData exported.MiddlewareData,
 				) exported.Acknowledgement {
 					return channeltypes.NewErrorAcknowledgement(fmt.Errorf("failed OnRecvPacket mock callback"))
 				}
@@ -483,7 +485,7 @@ func (suite *InterchainAccountsTestSuite) TestOnRecvPacket() {
 			cbs, ok := suite.chainB.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			ack := cbs.OnRecvPacket(suite.chainB.GetContext(), packet, nil)
+			ack := cbs.OnRecvPacket(suite.chainB.GetContext(), packet, nil, nil)
 			if tc.expAckSuccess {
 				suite.Require().True(ack.Success())
 				suite.Require().Equal(expectedAck, ack)
@@ -536,7 +538,7 @@ func (suite *InterchainAccountsTestSuite) TestOnAcknowledgementPacket() {
 				0,
 			)
 
-			err = cbs.OnAcknowledgementPacket(suite.chainB.GetContext(), packet, []byte("ackBytes"), nil)
+			err = cbs.OnAcknowledgementPacket(suite.chainB.GetContext(), packet, []byte("ackBytes"), nil, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -589,7 +591,7 @@ func (suite *InterchainAccountsTestSuite) TestOnTimeoutPacket() {
 				0,
 			)
 
-			err = cbs.OnTimeoutPacket(suite.chainA.GetContext(), packet, nil)
+			err = cbs.OnTimeoutPacket(suite.chainA.GetContext(), packet, nil, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)

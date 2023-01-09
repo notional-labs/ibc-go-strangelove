@@ -71,6 +71,7 @@ func (im IBCModule) OnChanOpenInit(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	version string,
+	middlewareData ibcexported.MiddlewareData,
 ) (string, error) {
 	if err := ValidateTransferChannelParams(ctx, im.keeper, order, portID, channelID); err != nil {
 		return "", err
@@ -102,6 +103,7 @@ func (im IBCModule) OnChanOpenTry(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) (string, error) {
 	if err := ValidateTransferChannelParams(ctx, im.keeper, order, portID, channelID); err != nil {
 		return "", err
@@ -126,6 +128,7 @@ func (im IBCModule) OnChanOpenAck(
 	channelID string,
 	_ string,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if counterpartyVersion != types.Version {
 		return sdkerrors.Wrapf(types.ErrInvalidVersion, "invalid counterparty version: %s, expected %s", counterpartyVersion, types.Version)
@@ -138,6 +141,7 @@ func (im IBCModule) OnChanOpenConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return nil
 }
@@ -147,6 +151,7 @@ func (im IBCModule) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	// Disallow user-initiated channel closing for transfer channels
 	return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "user cannot close channel")
@@ -157,6 +162,7 @@ func (im IBCModule) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return nil
 }
@@ -168,6 +174,7 @@ func (im IBCModule) OnRecvPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) ibcexported.Acknowledgement {
 	ack := channeltypes.NewResultAcknowledgement([]byte{byte(1)})
 
@@ -219,6 +226,7 @@ func (im IBCModule) OnAcknowledgementPacket(
 	packet channeltypes.Packet,
 	acknowledgement []byte,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	var ack channeltypes.Acknowledgement
 	if err := types.ModuleCdc.UnmarshalJSON(acknowledgement, &ack); err != nil {
@@ -271,6 +279,7 @@ func (im IBCModule) OnTimeoutPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	var data types.FungibleTokenPacketData
 	if err := types.ModuleCdc.UnmarshalJSON(packet.GetData(), &data); err != nil {

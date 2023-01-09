@@ -59,7 +59,7 @@ func (suite *KeeperTestSuite) TestWriteAcknowledgementAsync() {
 			// malleate test case
 			tc.malleate()
 
-			err := suite.chainB.GetSimApp().IBCFeeKeeper.WriteAcknowledgement(suite.chainB.GetContext(), chanCap, packet, ack)
+			err := suite.chainB.GetSimApp().IBCFeeKeeper.WriteAcknowledgement(suite.chainB.GetContext(), chanCap, packet, ack, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -97,7 +97,7 @@ func (suite *KeeperTestSuite) TestWriteAcknowledgementAsyncFeeDisabled() {
 	ack := channeltypes.NewResultAcknowledgement([]byte("success"))
 	chanCap := suite.chainB.GetChannelCapability(suite.path.EndpointB.ChannelConfig.PortID, suite.path.EndpointB.ChannelID)
 
-	err := suite.chainB.GetSimApp().IBCFeeKeeper.WriteAcknowledgement(suite.chainB.GetContext(), chanCap, packet, ack)
+	err := suite.chainB.GetSimApp().IBCFeeKeeper.WriteAcknowledgement(suite.chainB.GetContext(), chanCap, packet, ack, nil)
 	suite.Require().NoError(err)
 
 	packetAck, _ := suite.chainB.GetSimApp().GetIBCKeeper().ChannelKeeper.GetPacketAcknowledgement(suite.chainB.GetContext(), packet.DestinationPort, packet.DestinationChannel, 1)
@@ -158,7 +158,7 @@ func (suite *KeeperTestSuite) TestGetAppVersion() {
 			// malleate test case
 			tc.malleate()
 
-			appVersion, found := suite.chainA.GetSimApp().IBCFeeKeeper.GetAppVersion(suite.chainA.GetContext(), portID, channelID)
+			appVersion, found := suite.chainA.GetSimApp().IBCFeeKeeper.GetAppVersion(suite.chainA.GetContext(), portID, channelID, nil)
 
 			if tc.expFound {
 				suite.Require().True(found)

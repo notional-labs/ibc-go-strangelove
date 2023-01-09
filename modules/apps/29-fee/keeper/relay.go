@@ -22,16 +22,23 @@ func (k Keeper) SendPacket(
 	timeoutHeight clienttypes.Height,
 	timeoutTimestamp uint64,
 	data []byte,
+	middlewareData ibcexported.MiddlewareData,
 ) (uint64, error) {
-	return k.ics4Wrapper.SendPacket(ctx, chanCap, sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, data)
+	return k.ics4Wrapper.SendPacket(ctx, chanCap, sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, data, middlewareData)
 }
 
 // WriteAcknowledgement wraps IBC ChannelKeeper's WriteAcknowledgement function
 // ICS29 WriteAcknowledgement is used for asynchronous acknowledgements
-func (k Keeper) WriteAcknowledgement(ctx sdk.Context, chanCap *capabilitytypes.Capability, packet ibcexported.PacketI, acknowledgement ibcexported.Acknowledgement) error {
+func (k Keeper) WriteAcknowledgement(
+	ctx sdk.Context,
+	chanCap *capabilitytypes.Capability,
+	packet ibcexported.PacketI,
+	acknowledgement ibcexported.Acknowledgement,
+	middlewareData ibcexported.MiddlewareData,
+) error {
 	if !k.IsFeeEnabled(ctx, packet.GetDestPort(), packet.GetDestChannel()) {
 		// ics4Wrapper may be core IBC or higher-level middleware
-		return k.ics4Wrapper.WriteAcknowledgement(ctx, chanCap, packet, acknowledgement)
+		return k.ics4Wrapper.WriteAcknowledgement(ctx, chanCap, packet, acknowledgement, middlewareData)
 	}
 
 	packetID := channeltypes.NewPacketID(packet.GetDestPort(), packet.GetDestChannel(), packet.GetSequence())
@@ -51,12 +58,17 @@ func (k Keeper) WriteAcknowledgement(ctx sdk.Context, chanCap *capabilitytypes.C
 	k.DeleteForwardRelayerAddress(ctx, packetID)
 
 	// ics4Wrapper may be core IBC or higher-level middleware
-	return k.ics4Wrapper.WriteAcknowledgement(ctx, chanCap, packet, ack)
+	return k.ics4Wrapper.WriteAcknowledgement(ctx, chanCap, packet, ack, middlewareData)
 }
 
 // GetAppVersion returns the underlying application version.
-func (k Keeper) GetAppVersion(ctx sdk.Context, portID, channelID string) (string, bool) {
-	version, found := k.ics4Wrapper.GetAppVersion(ctx, portID, channelID)
+func (k Keeper) GetAppVersion(
+	ctx sdk.Context,
+	portID string,
+	channelID string,
+	middlewareData ibcexported.MiddlewareData,
+) (string, bool) {
+	version, found := k.ics4Wrapper.GetAppVersion(ctx, portID, channelID, middlewareData)
 	if !found {
 		return "", false
 	}

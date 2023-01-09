@@ -42,6 +42,7 @@ func (im IBCMiddleware) OnChanOpenInit(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	version string,
+	middlewareData exported.MiddlewareData,
 ) (string, error) {
 	var versionMetadata types.Metadata
 
@@ -57,7 +58,7 @@ func (im IBCMiddleware) OnChanOpenInit(
 			// lower down in the stack. Thus, if it is not a fee version we pass the entire version string onto the underlying
 			// application.
 			return im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID,
-				chanCap, counterparty, version)
+				chanCap, counterparty, version, middlewareData)
 		}
 	}
 
@@ -65,7 +66,8 @@ func (im IBCMiddleware) OnChanOpenInit(
 		return "", sdkerrors.Wrapf(types.ErrInvalidVersion, "expected %s, got %s", types.Version, versionMetadata.FeeVersion)
 	}
 
-	appVersion, err := im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, versionMetadata.AppVersion)
+	appVersion, err := im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID,
+		chanCap, counterparty, versionMetadata.AppVersion, middlewareData)
 	if err != nil {
 		return "", err
 	}
@@ -94,13 +96,15 @@ func (im IBCMiddleware) OnChanOpenTry(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	counterpartyVersion string,
+	middlewareData exported.MiddlewareData,
 ) (string, error) {
 	var versionMetadata types.Metadata
 	if err := types.ModuleCdc.UnmarshalJSON([]byte(counterpartyVersion), &versionMetadata); err != nil {
 		// Since it is valid for fee version to not be specified, the above middleware version may be for a middleware
 		// lower down in the stack. Thus, if it is not a fee version we pass the entire version string onto the underlying
 		// application.
-		return im.app.OnChanOpenTry(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, counterpartyVersion)
+		return im.app.OnChanOpenTry(ctx, order, connectionHops, portID, channelID,
+			chanCap, counterparty, counterpartyVersion, middlewareData)
 	}
 
 	if versionMetadata.FeeVersion != types.Version {
@@ -110,7 +114,8 @@ func (im IBCMiddleware) OnChanOpenTry(
 	im.keeper.SetFeeEnabled(ctx, portID, channelID)
 
 	// call underlying app's OnChanOpenTry callback with the app versions
-	appVersion, err := im.app.OnChanOpenTry(ctx, order, connectionHops, portID, channelID, chanCap, counterparty, versionMetadata.AppVersion)
+	appVersion, err := im.app.OnChanOpenTry(ctx, order, connectionHops, portID, channelID,
+		chanCap, counterparty, versionMetadata.AppVersion, middlewareData)
 	if err != nil {
 		return "", err
 	}
@@ -131,6 +136,7 @@ func (im IBCMiddleware) OnChanOpenAck(
 	channelID string,
 	counterpartyChannelID string,
 	counterpartyVersion string,
+	middlewareData exported.MiddlewareData,
 ) error {
 	// If handshake was initialized with fee enabled it must complete with fee enabled.
 	// If handshake was initialized with fee disabled it must complete with fee disabled.
@@ -145,11 +151,11 @@ func (im IBCMiddleware) OnChanOpenAck(
 		}
 
 		// call underlying app's OnChanOpenAck callback with the counterparty app version.
-		return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, versionMetadata.AppVersion)
+		return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, versionMetadata.AppVersion, middlewareData)
 	}
 
 	// call underlying app's OnChanOpenAck callback with the counterparty app version.
-	return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion)
+	return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion, middlewareData)
 }
 
 // OnChanOpenConfirm implements the IBCMiddleware interface
@@ -157,9 +163,10 @@ func (im IBCMiddleware) OnChanOpenConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData exported.MiddlewareData,
 ) error {
 	// call underlying app's OnChanOpenConfirm callback.
-	return im.app.OnChanOpenConfirm(ctx, portID, channelID)
+	return im.app.OnChanOpenConfirm(ctx, portID, channelID, middlewareData)
 }
 
 // OnChanCloseInit implements the IBCMiddleware interface
@@ -167,8 +174,9 @@ func (im IBCMiddleware) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData exported.MiddlewareData,
 ) error {
-	if err := im.app.OnChanCloseInit(ctx, portID, channelID); err != nil {
+	if err := im.app.OnChanCloseInit(ctx, portID, channelID, middlewareData); err != nil {
 		return err
 	}
 
@@ -192,8 +200,9 @@ func (im IBCMiddleware) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData exported.MiddlewareData,
 ) error {
-	if err := im.app.OnChanCloseConfirm(ctx, portID, channelID); err != nil {
+	if err := im.app.OnChanCloseConfirm(ctx, portID, channelID, middlewareData); err != nil {
 		return err
 	}
 
@@ -218,12 +227,13 @@ func (im IBCMiddleware) OnRecvPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData exported.MiddlewareData,
 ) exported.Acknowledgement {
 	if !im.keeper.IsFeeEnabled(ctx, packet.DestinationPort, packet.DestinationChannel) {
-		return im.app.OnRecvPacket(ctx, packet, relayer)
+		return im.app.OnRecvPacket(ctx, packet, relayer, middlewareData)
 	}
 
-	ack := im.app.OnRecvPacket(ctx, packet, relayer)
+	ack := im.app.OnRecvPacket(ctx, packet, relayer, middlewareData)
 
 	// in case of async aknowledgement (ack == nil) store the relayer address for use later during async WriteAcknowledgement
 	if ack == nil {
@@ -244,9 +254,10 @@ func (im IBCMiddleware) OnAcknowledgementPacket(
 	packet channeltypes.Packet,
 	acknowledgement []byte,
 	relayer sdk.AccAddress,
+	middlewareData exported.MiddlewareData,
 ) error {
 	if !im.keeper.IsFeeEnabled(ctx, packet.SourcePort, packet.SourceChannel) {
-		return im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer)
+		return im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer, middlewareData)
 	}
 
 	var ack types.IncentivizedAcknowledgement
@@ -263,14 +274,14 @@ func (im IBCMiddleware) OnAcknowledgementPacket(
 		// for fee enabled channels
 		//
 		// Please see ADR 004 for more information.
-		return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer)
+		return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer, middlewareData)
 	}
 
 	packetID := channeltypes.NewPacketID(packet.SourcePort, packet.SourceChannel, packet.Sequence)
 	feesInEscrow, found := im.keeper.GetFeesInEscrow(ctx, packetID)
 	if !found {
 		// call underlying callback
-		return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer)
+		return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer, middlewareData)
 	}
 
 	payee, found := im.keeper.GetPayeeAddress(ctx, relayer.String(), packet.SourceChannel)
@@ -278,7 +289,7 @@ func (im IBCMiddleware) OnAcknowledgementPacket(
 		im.keeper.DistributePacketFeesOnAcknowledgement(ctx, ack.ForwardRelayerAddress, relayer, feesInEscrow.PacketFees, packetID)
 
 		// call underlying callback
-		return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer)
+		return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer, middlewareData)
 	}
 
 	payeeAddr, err := sdk.AccAddressFromBech32(payee)
@@ -289,7 +300,7 @@ func (im IBCMiddleware) OnAcknowledgementPacket(
 	im.keeper.DistributePacketFeesOnAcknowledgement(ctx, ack.ForwardRelayerAddress, payeeAddr, feesInEscrow.PacketFees, packetID)
 
 	// call underlying callback
-	return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer)
+	return im.app.OnAcknowledgementPacket(ctx, packet, ack.AppAcknowledgement, relayer, middlewareData)
 }
 
 // OnTimeoutPacket implements the IBCMiddleware interface
@@ -298,6 +309,7 @@ func (im IBCMiddleware) OnTimeoutPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData exported.MiddlewareData,
 ) error {
 	// if the fee keeper is locked then fee logic should be skipped
 	// this may occur in the presence of a severe bug which leads to invalid state
@@ -305,14 +317,14 @@ func (im IBCMiddleware) OnTimeoutPacket(
 	//
 	// Please see ADR 004 for more information.
 	if !im.keeper.IsFeeEnabled(ctx, packet.SourcePort, packet.SourceChannel) || im.keeper.IsLocked(ctx) {
-		return im.app.OnTimeoutPacket(ctx, packet, relayer)
+		return im.app.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 	}
 
 	packetID := channeltypes.NewPacketID(packet.SourcePort, packet.SourceChannel, packet.Sequence)
 	feesInEscrow, found := im.keeper.GetFeesInEscrow(ctx, packetID)
 	if !found {
 		// call underlying callback
-		return im.app.OnTimeoutPacket(ctx, packet, relayer)
+		return im.app.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 	}
 
 	payee, found := im.keeper.GetPayeeAddress(ctx, relayer.String(), packet.SourceChannel)
@@ -320,7 +332,7 @@ func (im IBCMiddleware) OnTimeoutPacket(
 		im.keeper.DistributePacketFeesOnTimeout(ctx, relayer, feesInEscrow.PacketFees, packetID)
 
 		// call underlying callback
-		return im.app.OnTimeoutPacket(ctx, packet, relayer)
+		return im.app.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 	}
 
 	payeeAddr, err := sdk.AccAddressFromBech32(payee)
@@ -331,7 +343,7 @@ func (im IBCMiddleware) OnTimeoutPacket(
 	im.keeper.DistributePacketFeesOnTimeout(ctx, payeeAddr, feesInEscrow.PacketFees, packetID)
 
 	// call underlying callback
-	return im.app.OnTimeoutPacket(ctx, packet, relayer)
+	return im.app.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 }
 
 // SendPacket implements the ICS4 Wrapper interface
@@ -343,8 +355,10 @@ func (im IBCMiddleware) SendPacket(
 	timeoutHeight clienttypes.Height,
 	timeoutTimestamp uint64,
 	data []byte,
+	middlewareData exported.MiddlewareData,
 ) (uint64, error) {
-	return im.keeper.SendPacket(ctx, chanCap, sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, data)
+	return im.keeper.SendPacket(ctx, chanCap, sourcePort, sourceChannel,
+		timeoutHeight, timeoutTimestamp, data, middlewareData)
 }
 
 // WriteAcknowledgement implements the ICS4 Wrapper interface
@@ -353,11 +367,12 @@ func (im IBCMiddleware) WriteAcknowledgement(
 	chanCap *capabilitytypes.Capability,
 	packet exported.PacketI,
 	ack exported.Acknowledgement,
+	middlewareData exported.MiddlewareData,
 ) error {
-	return im.keeper.WriteAcknowledgement(ctx, chanCap, packet, ack)
+	return im.keeper.WriteAcknowledgement(ctx, chanCap, packet, ack, middlewareData)
 }
 
 // GetAppVersion returns the application version of the underlying application
-func (im IBCMiddleware) GetAppVersion(ctx sdk.Context, portID, channelID string) (string, bool) {
-	return im.keeper.GetAppVersion(ctx, portID, channelID)
+func (im IBCMiddleware) GetAppVersion(ctx sdk.Context, portID, channelID string, middlewareData exported.MiddlewareData) (string, bool) {
+	return im.keeper.GetAppVersion(ctx, portID, channelID, middlewareData)
 }

@@ -225,7 +225,7 @@ func (suite *KeeperTestSuite) TestSendPacket() {
 			expectedSequence, ok := suite.chainA.App.GetIBCKeeper().ChannelKeeper.GetNextSequenceSend(suite.chainA.GetContext(), sourcePort, sourceChannel)
 
 			sequence, err := suite.chainA.App.GetIBCKeeper().ChannelKeeper.SendPacket(suite.chainA.GetContext(), channelCap,
-				sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, packetData)
+				sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, packetData, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -587,7 +587,7 @@ func (suite *KeeperTestSuite) TestWriteAcknowledgement() {
 
 			tc.malleate()
 
-			err := suite.chainB.App.GetIBCKeeper().ChannelKeeper.WriteAcknowledgement(suite.chainB.GetContext(), channelCap, packet, ack)
+			err := suite.chainB.App.GetIBCKeeper().ChannelKeeper.WriteAcknowledgement(suite.chainB.GetContext(), channelCap, packet, ack, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)

@@ -80,7 +80,7 @@ func (suite *FeeTestSuite) TestOnChanOpenInit() {
 			// setup mock callback
 			suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnChanOpenInit = func(ctx sdk.Context, order channeltypes.Order, connectionHops []string,
 				portID, channelID string, chanCap *capabilitytypes.Capability,
-				counterparty channeltypes.Counterparty, version string,
+				counterparty channeltypes.Counterparty, version string, middlewareData exported.MiddlewareData,
 			) (string, error) {
 				if version != ibcmock.Version {
 					return "", fmt.Errorf("incorrect mock version")
@@ -109,7 +109,7 @@ func (suite *FeeTestSuite) TestOnChanOpenInit() {
 			suite.Require().True(ok)
 
 			version, err := cbs.OnChanOpenInit(suite.chainA.GetContext(), channel.Ordering, channel.GetConnectionHops(),
-				suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, chanCap, counterparty, channel.Version)
+				suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, chanCap, counterparty, channel.Version, nil)
 
 			if tc.expPass {
 				// check if the channel is fee enabled. If so version string should include metaData
@@ -178,6 +178,7 @@ func (suite *FeeTestSuite) TestOnChanOpenTry() {
 			suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnChanOpenTry = func(ctx sdk.Context, order channeltypes.Order, connectionHops []string,
 				portID, channelID string, chanCap *capabilitytypes.Capability,
 				counterparty channeltypes.Counterparty, counterpartyVersion string,
+				middlewareData exported.MiddlewareData,
 			) (string, error) {
 				if counterpartyVersion != ibcmock.Version {
 					return "", fmt.Errorf("incorrect mock version")
@@ -212,7 +213,7 @@ func (suite *FeeTestSuite) TestOnChanOpenTry() {
 			suite.Require().True(ok)
 
 			_, err = cbs.OnChanOpenTry(suite.chainA.GetContext(), channel.Ordering, channel.GetConnectionHops(),
-				suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, chanCap, counterparty, tc.cpVersion)
+				suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, chanCap, counterparty, tc.cpVersion, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -276,6 +277,7 @@ func (suite *FeeTestSuite) TestOnChanOpenAck() {
 			// setup mock callback
 			suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnChanOpenAck = func(
 				ctx sdk.Context, portID, channelID string, counterpartyChannelID string, counterpartyVersion string,
+				middlewareData exported.MiddlewareData,
 			) error {
 				if counterpartyVersion != ibcmock.Version {
 					return fmt.Errorf("incorrect mock version")
@@ -295,7 +297,8 @@ func (suite *FeeTestSuite) TestOnChanOpenAck() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnChanOpenAck(suite.chainA.GetContext(), suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, suite.path.EndpointA.Counterparty.ChannelID, tc.cpVersion)
+			err = cbs.OnChanOpenAck(suite.chainA.GetContext(), suite.path.EndpointA.ChannelConfig.PortID,
+				suite.path.EndpointA.ChannelID, suite.path.EndpointA.Counterparty.ChannelID, tc.cpVersion, nil)
 			if tc.expPass {
 				suite.Require().NoError(err, "unexpected error for case: %s", tc.name)
 			} else {
@@ -323,6 +326,7 @@ func (suite *FeeTestSuite) TestOnChanCloseInit() {
 			"application callback fails", func() {
 				suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnChanCloseInit = func(
 					ctx sdk.Context, portID, channelID string,
+					middlewareData exported.MiddlewareData,
 				) error {
 					return fmt.Errorf("application callback fails")
 				}
@@ -382,7 +386,7 @@ func (suite *FeeTestSuite) TestOnChanCloseInit() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnChanCloseInit(suite.chainA.GetContext(), suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID)
+			err = cbs.OnChanCloseInit(suite.chainA.GetContext(), suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -412,6 +416,7 @@ func (suite *FeeTestSuite) TestOnChanCloseConfirm() {
 			"application callback fails", func() {
 				suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnChanCloseConfirm = func(
 					ctx sdk.Context, portID, channelID string,
+					middlewareData exported.MiddlewareData,
 				) error {
 					return fmt.Errorf("application callback fails")
 				}
@@ -472,7 +477,7 @@ func (suite *FeeTestSuite) TestOnChanCloseConfirm() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnChanCloseConfirm(suite.chainA.GetContext(), suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID)
+			err = cbs.OnChanCloseConfirm(suite.chainA.GetContext(), suite.path.EndpointA.ChannelConfig.PortID, suite.path.EndpointA.ChannelID, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -505,6 +510,7 @@ func (suite *FeeTestSuite) TestOnRecvPacket() {
 					ctx sdk.Context,
 					packet channeltypes.Packet,
 					relayer sdk.AccAddress,
+					middlewareData exported.MiddlewareData,
 				) exported.Acknowledgement {
 					return nil
 				}
@@ -555,7 +561,7 @@ func (suite *FeeTestSuite) TestOnRecvPacket() {
 			// malleate test case
 			tc.malleate()
 
-			result := cbs.OnRecvPacket(suite.chainB.GetContext(), packet, suite.chainA.SenderAccount.GetAddress())
+			result := cbs.OnRecvPacket(suite.chainB.GetContext(), packet, suite.chainA.SenderAccount.GetAddress(), nil)
 
 			switch {
 			case tc.name == "success":
@@ -768,7 +774,9 @@ func (suite *FeeTestSuite) TestOnAcknowledgementPacket() {
 		{
 			"application callback fails",
 			func() {
-				suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnAcknowledgementPacket = func(_ sdk.Context, _ channeltypes.Packet, _ []byte, _ sdk.AccAddress) error {
+				suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnAcknowledgementPacket = func(
+					_ sdk.Context, _ channeltypes.Packet, _ []byte, _ sdk.AccAddress, middlewareData exported.MiddlewareData,
+				) error {
 					return fmt.Errorf("mock fee app callback fails")
 				}
 			},
@@ -806,7 +814,7 @@ func (suite *FeeTestSuite) TestOnAcknowledgementPacket() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnAcknowledgementPacket(suite.chainA.GetContext(), packet, ack, relayerAddr)
+			err = cbs.OnAcknowledgementPacket(suite.chainA.GetContext(), packet, ack, relayerAddr, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -954,7 +962,7 @@ func (suite *FeeTestSuite) TestOnTimeoutPacket() {
 		{
 			"application callback fails",
 			func() {
-				suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnTimeoutPacket = func(_ sdk.Context, _ channeltypes.Packet, _ sdk.AccAddress) error {
+				suite.chainA.GetSimApp().FeeMockModule.IBCApp.OnTimeoutPacket = func(_ sdk.Context, _ channeltypes.Packet, _ sdk.AccAddress, middlewareData exported.MiddlewareData) error {
 					return fmt.Errorf("mock fee app callback fails")
 				}
 			},
@@ -989,7 +997,7 @@ func (suite *FeeTestSuite) TestOnTimeoutPacket() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnTimeoutPacket(suite.chainA.GetContext(), packet, relayerAddr)
+			err = cbs.OnTimeoutPacket(suite.chainA.GetContext(), packet, relayerAddr, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -1064,7 +1072,7 @@ func (suite *FeeTestSuite) TestGetAppVersion() {
 
 			feeModule := cbs.(fee.IBCMiddleware)
 
-			appVersion, found := feeModule.GetAppVersion(suite.chainA.GetContext(), portID, channelID)
+			appVersion, found := feeModule.GetAppVersion(suite.chainA.GetContext(), portID, channelID, nil)
 
 			if tc.expFound {
 				suite.Require().True(found)
