@@ -38,6 +38,7 @@ func (im IBCModule) OnChanOpenInit(
     chanCap *capabilitytypes.Capability,
     counterparty channeltypes.Counterparty,
     version string,
+    middlewareData exported.MiddlewareData,
 ) error {
     // the authentication module *must* claim the channel capability on OnChanOpenInit
     if err := im.keeper.ClaimCapability(ctx, chanCap, host.ChannelCapabilityPath(portID, channelID)); err != nil {
@@ -55,6 +56,7 @@ func (im IBCModule) OnChanOpenAck(
     portID,
     channelID string,
     counterpartyVersion string,
+    middlewareData exported.MiddlewareData,
 ) error {
     // perform custom logic
 
@@ -66,6 +68,7 @@ func (im IBCModule) OnChanCloseConfirm(
     ctx sdk.Context,
     portID,
     channelID string,
+    middlewareData exported.MiddlewareData,
 ) error {
     // perform custom logic
 
@@ -78,6 +81,7 @@ func (im IBCModule) OnAcknowledgementPacket(
     packet channeltypes.Packet,
     acknowledgement []byte,
     relayer sdk.AccAddress,
+    middlewareData exported.MiddlewareData,
 ) error {
     // perform custom logic
 
@@ -89,6 +93,7 @@ func (im IBCModule) OnTimeoutPacket(
     ctx sdk.Context,
     packet channeltypes.Packet,
     relayer sdk.AccAddress,
+    middlewareData exported.MiddlewareData,
 ) error {
     // perform custom logic
 
@@ -111,6 +116,7 @@ func (im IBCModule) OnChanOpenTry(
     chanCap *capabilitytypes.Capability,
     counterparty channeltypes.Counterparty,
     counterpartyVersion string,
+    middlewareData exported.MiddlewareData,
 ) (string, error) {
     panic("UNIMPLEMENTED")
 }
@@ -120,6 +126,7 @@ func (im IBCModule) OnChanOpenConfirm(
     ctx sdk.Context,
     portID,
     channelID string,
+    middlewareData exported.MiddlewareData,
 ) error {
     panic("UNIMPLEMENTED")
 }
@@ -129,6 +136,7 @@ func (im IBCModule) OnChanCloseInit(
     ctx sdk.Context,
     portID,
     channelID string,
+    middlewareData exported.MiddlewareData,
 ) error {
     panic("UNIMPLEMENTED")
 }
@@ -140,6 +148,7 @@ func (im IBCModule) OnRecvPacket(
     ctx sdk.Context,
     packet channeltypes.Packet,
     relayer sdk.AccAddress,
+    middlewareData exported.MiddlewareData,
 ) ibcexported.Acknowledgement {
     panic("UNIMPLEMENTED")
 }

@@ -163,6 +163,7 @@ Ref: https://keepachangelog.com/en/1.0.0/
 * (testing) [\#892](https://github.com/cosmos/ibc-go/pull/892) IBC Mock modules store the scoped keeper and portID within the IBCMockApp. They also maintain reference to the AppModule to update the AppModule's list of IBC applications it references. Allows for the mock module to be reused as a base application in middleware stacks.
 * (channel) [\#882](https://github.com/cosmos/ibc-go/pull/882) The `WriteAcknowledgement` API now takes `exported.Acknowledgement` instead of a byte array
 * (modules/core/ante) [\#950](https://github.com/cosmos/ibc-go/pull/950) Replaces the channel keeper with the IBC keeper in the IBC `AnteDecorator` in order to execute the entire message and be able to reject redundant messages that are in the same block as the non-redundant messages.
+* (core) []() All IBCModule callbacks now pass an `exported.MiddlewareData` parameter for an optional KV store of arbitrary data that can be passed between IBC middlewares. This allows middlewares to communicate internally without requiring manipulation of the packet data, which would expose functionality to the user.
 
 ### State Machine Breaking
 

@@ -189,10 +189,12 @@ The packet callbacks just like the handshake callbacks wrap the application's pa
 OnRecvPacket(
     ctx sdk.Context,
     packet channeltypes.Packet,
+    relayer sdk.AccAddress,
+    middlewareData exported.MiddlewareData,
 ) ibcexported.Acknowledgement {
     doCustomLogic(packet)
 
-    ack := app.OnRecvPacket(ctx, packet)
+    ack := app.OnRecvPacket(ctx, packet, relayer, middlewareData)
 
     doCustomLogic(ack) // middleware may modify outgoing ack
     return ack
@@ -202,15 +204,19 @@ OnAcknowledgementPacket(
     ctx sdk.Context,
     packet channeltypes.Packet,
     acknowledgement []byte,
+    relayer sdk.AccAddress,
+    middlewareData exported.MiddlewareData,
 ) (*sdk.Result, error) {
     doCustomLogic(packet, ack)
 
-    app.OnAcknowledgementPacket(ctx, packet, ack)
+    app.OnAcknowledgementPacket(ctx, packet, ack, relayer, middlewareData)
 }
 
 OnTimeoutPacket(
     ctx sdk.Context,
     packet channeltypes.Packet,
+    relayer sdk.AccAddress,
+    middlewareData exported.MiddlewareData,
 ) (*sdk.Result, error) {
     doCustomLogic(packet)
 
@@ -225,18 +231,27 @@ Middleware must also wrap ICS-4 so that any communication from the application t
 ```go
 // only called for async acks
 func WriteAcknowledgement(
-  packet channeltypes.Packet,
-  acknowledgement []bytes) {
+  ctx sdk.Context,
+  chanCap *capabilitytypes.Capability,
+  packet exported.PacketI,
+  ack exported.Acknowledgement,
+  middlewareData exported.MiddlewareData,
+) {
     // middleware may modify acknowledgement
     ack_bytes = doCustomLogic(acknowledgement)
 
-    return ics4Keeper.WriteAcknowledgement(packet, ack_bytes)
+    return ics4Keeper.WriteAcknowledgement(ctx, chanCap, packet, ack, middlewareData)
 }
 
-func SendPacket(appPacket channeltypes.Packet) {
+func SendPacket(
+	ctx sdk.Context,
+	chanCap *capabilitytypes.Capability,
+	packet ibcexported.PacketI,
+	middlewareData ibcexported.MiddlewareData,
+) {
     // middleware may modify packet
     packet = doCustomLogic(app_packet)
 
-    return ics4Keeper.SendPacket(packet)
+    return ics4Keeper.SendPacket(ctx, chanCap, packet, middlewareData)
 }
 ```
