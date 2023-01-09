@@ -23,6 +23,7 @@ func (k Keeper) SendPacket(
 	ctx sdk.Context,
 	channelCap *capabilitytypes.Capability,
 	packet exported.PacketI,
+	middlewareData exported.MiddlewareData,
 ) error {
 	if err := packet.ValidateBasic(); err != nil {
 		return sdkerrors.Wrap(err, "packet failed basic validation")
@@ -314,6 +315,7 @@ func (k Keeper) WriteAcknowledgement(
 	chanCap *capabilitytypes.Capability,
 	packet exported.PacketI,
 	acknowledgement exported.Acknowledgement,
+	middlewareData exported.MiddlewareData,
 ) error {
 	channel, found := k.GetChannel(ctx, packet.GetDestPort(), packet.GetDestChannel())
 	if !found {

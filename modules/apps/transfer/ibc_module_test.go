@@ -84,7 +84,7 @@ func (suite *TransferTestSuite) TestOnChanOpenInit() {
 			tc.malleate() // explicitly change fields in channel and testChannel
 
 			err = cbs.OnChanOpenInit(suite.chainA.GetContext(), channel.Ordering, channel.GetConnectionHops(),
-				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, chanCap, channel.Counterparty, channel.GetVersion(),
+				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, chanCap, channel.Counterparty, channel.GetVersion(), nil,
 			)
 
 			if tc.expPass {
@@ -172,7 +172,7 @@ func (suite *TransferTestSuite) TestOnChanOpenTry() {
 			tc.malleate() // explicitly change fields in channel and testChannel
 
 			version, err := cbs.OnChanOpenTry(suite.chainA.GetContext(), channel.Ordering, channel.GetConnectionHops(),
-				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, chanCap, channel.Counterparty, counterpartyVersion,
+				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, chanCap, channel.Counterparty, counterpartyVersion, nil,
 			)
 
 			if tc.expPass {
@@ -223,7 +223,8 @@ func (suite *TransferTestSuite) TestOnChanOpenAck() {
 
 			tc.malleate() // explicitly change fields in channel and testChannel
 
-			err = cbs.OnChanOpenAck(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointA.Counterparty.ChannelID, counterpartyVersion)
+			err = cbs.OnChanOpenAck(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID,
+				path.EndpointA.ChannelID, path.EndpointA.Counterparty.ChannelID, counterpartyVersion, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)

@@ -34,6 +34,7 @@ func (im IBCModule) OnChanOpenInit(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	version string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "channel handshake must be initiated by controller chain")
 }
@@ -48,6 +49,7 @@ func (im IBCModule) OnChanOpenTry(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) (string, error) {
 	if !im.keeper.IsHostEnabled(ctx) {
 		return "", types.ErrHostSubModuleDisabled
@@ -63,6 +65,7 @@ func (im IBCModule) OnChanOpenAck(
 	channelID string,
 	counterpartyChannelID string,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "channel handshake must be initiated by controller chain")
 }
@@ -72,6 +75,7 @@ func (im IBCModule) OnChanOpenConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsHostEnabled(ctx) {
 		return types.ErrHostSubModuleDisabled
@@ -85,6 +89,7 @@ func (im IBCModule) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	// Disallow user-initiated channel closing for interchain account channels
 	return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "user cannot close channel")
@@ -95,6 +100,7 @@ func (im IBCModule) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return im.keeper.OnChanCloseConfirm(ctx, portID, channelID)
 }
@@ -104,6 +110,7 @@ func (im IBCModule) OnRecvPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	_ sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) ibcexported.Acknowledgement {
 	if !im.keeper.IsHostEnabled(ctx) {
 		return types.NewErrorAcknowledgement(types.ErrHostSubModuleDisabled)
@@ -128,6 +135,7 @@ func (im IBCModule) OnAcknowledgementPacket(
 	packet channeltypes.Packet,
 	acknowledgement []byte,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "cannot receive acknowledgement on a host channel end, a host chain does not send a packet over the channel")
 }
@@ -137,6 +145,7 @@ func (im IBCModule) OnTimeoutPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "cannot cause a packet timeout on a host channel end, a host chain does not send a packet over the channel")
 }

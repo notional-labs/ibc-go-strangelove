@@ -23,6 +23,7 @@ type MockIBCApp struct {
 		channelCap *capabilitytypes.Capability,
 		counterparty channeltypes.Counterparty,
 		version string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnChanOpenTry func(
@@ -34,6 +35,7 @@ type MockIBCApp struct {
 		channelCap *capabilitytypes.Capability,
 		counterparty channeltypes.Counterparty,
 		counterpartyVersion string,
+		middlewareData exported.MiddlewareData,
 	) (version string, err error)
 
 	OnChanOpenAck func(
@@ -42,24 +44,28 @@ type MockIBCApp struct {
 		channelID string,
 		counterpartyChannelID string,
 		counterpartyVersion string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnChanOpenConfirm func(
 		ctx sdk.Context,
 		portID,
 		channelID string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnChanCloseInit func(
 		ctx sdk.Context,
 		portID,
 		channelID string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnChanCloseConfirm func(
 		ctx sdk.Context,
 		portID,
 		channelID string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	// OnRecvPacket must return an acknowledgement that implements the Acknowledgement interface.
@@ -71,6 +77,7 @@ type MockIBCApp struct {
 		ctx sdk.Context,
 		packet channeltypes.Packet,
 		relayer sdk.AccAddress,
+		middlewareData exported.MiddlewareData,
 	) exported.Acknowledgement
 
 	OnAcknowledgementPacket func(
@@ -78,12 +85,14 @@ type MockIBCApp struct {
 		packet channeltypes.Packet,
 		acknowledgement []byte,
 		relayer sdk.AccAddress,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnTimeoutPacket func(
 		ctx sdk.Context,
 		packet channeltypes.Packet,
 		relayer sdk.AccAddress,
+		middlewareData exported.MiddlewareData,
 	) error
 }
 

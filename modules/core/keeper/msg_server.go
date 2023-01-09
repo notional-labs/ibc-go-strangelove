@@ -187,7 +187,7 @@ func (k Keeper) ChannelOpenInit(goCtx context.Context, msg *channeltypes.MsgChan
 	}
 
 	// Perform application logic callback
-	if err = cbs.OnChanOpenInit(ctx, msg.Channel.Ordering, msg.Channel.ConnectionHops, msg.PortId, channelID, cap, msg.Channel.Counterparty, msg.Channel.Version); err != nil {
+	if err = cbs.OnChanOpenInit(ctx, msg.Channel.Ordering, msg.Channel.ConnectionHops, msg.PortId, channelID, cap, msg.Channel.Counterparty, msg.Channel.Version, nil); err != nil {
 		return nil, sdkerrors.Wrap(err, "channel open init callback failed")
 	}
 
@@ -227,7 +227,8 @@ func (k Keeper) ChannelOpenTry(goCtx context.Context, msg *channeltypes.MsgChann
 	}
 
 	// Perform application logic callback
-	version, err := cbs.OnChanOpenTry(ctx, msg.Channel.Ordering, msg.Channel.ConnectionHops, msg.PortId, channelID, cap, msg.Channel.Counterparty, msg.CounterpartyVersion)
+	version, err := cbs.OnChanOpenTry(ctx, msg.Channel.Ordering, msg.Channel.ConnectionHops,
+		msg.PortId, channelID, cap, msg.Channel.Counterparty, msg.CounterpartyVersion, nil)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "channel open try callback failed")
 	}
@@ -266,7 +267,7 @@ func (k Keeper) ChannelOpenAck(goCtx context.Context, msg *channeltypes.MsgChann
 	}
 
 	// Perform application logic callback
-	if err = cbs.OnChanOpenAck(ctx, msg.PortId, msg.ChannelId, msg.CounterpartyChannelId, msg.CounterpartyVersion); err != nil {
+	if err = cbs.OnChanOpenAck(ctx, msg.PortId, msg.ChannelId, msg.CounterpartyChannelId, msg.CounterpartyVersion, nil); err != nil {
 		return nil, sdkerrors.Wrap(err, "channel open ack callback failed")
 	}
 
@@ -300,7 +301,7 @@ func (k Keeper) ChannelOpenConfirm(goCtx context.Context, msg *channeltypes.MsgC
 	}
 
 	// Perform application logic callback
-	if err = cbs.OnChanOpenConfirm(ctx, msg.PortId, msg.ChannelId); err != nil {
+	if err = cbs.OnChanOpenConfirm(ctx, msg.PortId, msg.ChannelId, nil); err != nil {
 		return nil, sdkerrors.Wrap(err, "channel open confirm callback failed")
 	}
 
@@ -325,7 +326,7 @@ func (k Keeper) ChannelCloseInit(goCtx context.Context, msg *channeltypes.MsgCha
 		return nil, sdkerrors.Wrapf(porttypes.ErrInvalidRoute, "route not found to module: %s", module)
 	}
 
-	if err = cbs.OnChanCloseInit(ctx, msg.PortId, msg.ChannelId); err != nil {
+	if err = cbs.OnChanCloseInit(ctx, msg.PortId, msg.ChannelId, nil); err != nil {
 		return nil, sdkerrors.Wrap(err, "channel close init callback failed")
 	}
 
@@ -353,7 +354,7 @@ func (k Keeper) ChannelCloseConfirm(goCtx context.Context, msg *channeltypes.Msg
 		return nil, sdkerrors.Wrapf(porttypes.ErrInvalidRoute, "route not found to module: %s", module)
 	}
 
-	if err = cbs.OnChanCloseConfirm(ctx, msg.PortId, msg.ChannelId); err != nil {
+	if err = cbs.OnChanCloseConfirm(ctx, msg.PortId, msg.ChannelId, nil); err != nil {
 		return nil, sdkerrors.Wrap(err, "channel close confirm callback failed")
 	}
 
@@ -409,7 +410,7 @@ func (k Keeper) RecvPacket(goCtx context.Context, msg *channeltypes.MsgRecvPacke
 	//
 	// Cache context so that we may discard state changes from callback if the acknowledgement is unsuccessful.
 	cacheCtx, writeFn = ctx.CacheContext()
-	ack := cbs.OnRecvPacket(cacheCtx, msg.Packet, relayer)
+	ack := cbs.OnRecvPacket(cacheCtx, msg.Packet, relayer, nil)
 	// NOTE: The context returned by CacheContext() refers to a new EventManager, so it needs to explicitly set events to the original context.
 	// Events from callback are emitted regardless of acknowledgement success
 	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
@@ -422,7 +423,7 @@ func (k Keeper) RecvPacket(goCtx context.Context, msg *channeltypes.MsgRecvPacke
 	// NOTE: IBC applications modules may call the WriteAcknowledgement asynchronously if the
 	// acknowledgement is nil.
 	if ack != nil {
-		if err := k.ChannelKeeper.WriteAcknowledgement(ctx, cap, msg.Packet, ack); err != nil {
+		if err := k.ChannelKeeper.WriteAcknowledgement(ctx, cap, msg.Packet, ack, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -484,7 +485,7 @@ func (k Keeper) Timeout(goCtx context.Context, msg *channeltypes.MsgTimeout) (*c
 	}
 
 	// Perform application logic callback
-	err = cbs.OnTimeoutPacket(ctx, msg.Packet, relayer)
+	err = cbs.OnTimeoutPacket(ctx, msg.Packet, relayer, nil)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "timeout packet callback failed")
 	}
@@ -555,7 +556,7 @@ func (k Keeper) TimeoutOnClose(goCtx context.Context, msg *channeltypes.MsgTimeo
 	//
 	// NOTE: MsgTimeout and MsgTimeoutOnClose use the same "OnTimeoutPacket"
 	// application logic callback.
-	err = cbs.OnTimeoutPacket(ctx, msg.Packet, relayer)
+	err = cbs.OnTimeoutPacket(ctx, msg.Packet, relayer, nil)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "timeout packet callback failed")
 	}
@@ -623,7 +624,7 @@ func (k Keeper) Acknowledgement(goCtx context.Context, msg *channeltypes.MsgAckn
 	}
 
 	// Perform application logic callback
-	err = cbs.OnAcknowledgementPacket(ctx, msg.Packet, msg.Acknowledgement, relayer)
+	err = cbs.OnAcknowledgementPacket(ctx, msg.Packet, msg.Acknowledgement, relayer, nil)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "acknowledge packet callback failed")
 	}

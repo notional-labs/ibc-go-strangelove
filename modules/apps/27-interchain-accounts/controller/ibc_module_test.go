@@ -13,6 +13,7 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v3/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v3/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v3/modules/core/24-host"
+	ibcexported "github.com/cosmos/ibc-go/v3/modules/core/exported"
 	ibctesting "github.com/cosmos/ibc-go/v3/testing"
 )
 
@@ -138,6 +139,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenInit() {
 				suite.chainA.GetSimApp().ICAAuthModule.IBCApp.OnChanOpenInit = func(ctx sdk.Context, order channeltypes.Order, connectionHops []string,
 					portID, channelID string, chanCap *capabilitytypes.Capability,
 					counterparty channeltypes.Counterparty, version string,
+					middlewareData ibcexported.MiddlewareData,
 				) error {
 					return fmt.Errorf("mock ica auth fails")
 				}
@@ -190,6 +192,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenInit() {
 
 			err = cbs.OnChanOpenInit(suite.chainA.GetContext(), channel.Ordering, channel.GetConnectionHops(),
 				path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, chanCap, channel.Counterparty, channel.GetVersion(),
+				nil,
 			)
 
 			if tc.expPass {
@@ -244,7 +247,7 @@ func (suite *InterchainAccountsTestSuite) TestChanOpenTry() {
 	version, err := cbs.OnChanOpenTry(
 		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.Order, []string{path.EndpointA.ConnectionID},
 		path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, chanCap,
-		counterparty, path.EndpointB.ChannelConfig.Version,
+		counterparty, path.EndpointB.ChannelConfig.Version, nil,
 	)
 	suite.Require().Error(err)
 	suite.Require().Equal("", version)
@@ -275,6 +278,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenAck() {
 			"ICA auth module callback fails", func() {
 				suite.chainA.GetSimApp().ICAAuthModule.IBCApp.OnChanOpenAck = func(
 					ctx sdk.Context, portID, channelID string, counterpartyChannelID string, counterpartyVersion string,
+					middlewareData ibcexported.MiddlewareData,
 				) error {
 					return fmt.Errorf("mock ica auth fails")
 				}
@@ -305,7 +309,8 @@ func (suite *InterchainAccountsTestSuite) TestOnChanOpenAck() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnChanOpenAck(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, path.EndpointB.ChannelID, path.EndpointB.ChannelConfig.Version)
+			err = cbs.OnChanOpenAck(suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID,
+				path.EndpointA.ChannelID, path.EndpointB.ChannelID, path.EndpointB.ChannelConfig.Version, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -361,7 +366,7 @@ func (suite *InterchainAccountsTestSuite) TestChanOpenConfirm() {
 	suite.Require().True(ok)
 
 	err = cbs.OnChanOpenConfirm(
-		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
+		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, nil,
 	)
 	suite.Require().Error(err)
 }
@@ -381,7 +386,7 @@ func (suite *InterchainAccountsTestSuite) TestOnChanCloseInit() {
 	suite.Require().True(ok)
 
 	err = cbs.OnChanCloseInit(
-		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID,
+		suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, nil,
 	)
 
 	suite.Require().Error(err)
@@ -418,7 +423,8 @@ func (suite *InterchainAccountsTestSuite) TestOnChanCloseConfirm() {
 			suite.Require().True(ok)
 
 			err = cbs.OnChanCloseConfirm(
-				suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID)
+				suite.chainA.GetContext(), path.EndpointA.ChannelConfig.PortID, path.EndpointA.ChannelID, nil,
+			)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -471,7 +477,7 @@ func (suite *InterchainAccountsTestSuite) TestOnRecvPacket() {
 				0,
 			)
 
-			ack := cbs.OnRecvPacket(suite.chainA.GetContext(), packet, nil)
+			ack := cbs.OnRecvPacket(suite.chainA.GetContext(), packet, nil, nil)
 			suite.Require().Equal(tc.expPass, ack.Success())
 		})
 	}
@@ -499,6 +505,7 @@ func (suite *InterchainAccountsTestSuite) TestOnAcknowledgementPacket() {
 			"ICA auth module callback fails", func() {
 				suite.chainA.GetSimApp().ICAAuthModule.IBCApp.OnAcknowledgementPacket = func(
 					ctx sdk.Context, packet channeltypes.Packet, acknowledgement []byte, relayer sdk.AccAddress,
+					middlewareData ibcexported.MiddlewareData,
 				) error {
 					return fmt.Errorf("mock ica auth fails")
 				}
@@ -535,7 +542,7 @@ func (suite *InterchainAccountsTestSuite) TestOnAcknowledgementPacket() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnAcknowledgementPacket(suite.chainA.GetContext(), packet, []byte("ack"), nil)
+			err = cbs.OnAcknowledgementPacket(suite.chainA.GetContext(), packet, []byte("ack"), nil, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -568,6 +575,7 @@ func (suite *InterchainAccountsTestSuite) TestOnTimeoutPacket() {
 			"ICA auth module callback fails", func() {
 				suite.chainA.GetSimApp().ICAAuthModule.IBCApp.OnTimeoutPacket = func(
 					ctx sdk.Context, packet channeltypes.Packet, relayer sdk.AccAddress,
+					middlewareData ibcexported.MiddlewareData,
 				) error {
 					return fmt.Errorf("mock ica auth fails")
 				}
@@ -604,7 +612,7 @@ func (suite *InterchainAccountsTestSuite) TestOnTimeoutPacket() {
 			cbs, ok := suite.chainA.App.GetIBCKeeper().Router.GetRoute(module)
 			suite.Require().True(ok)
 
-			err = cbs.OnTimeoutPacket(suite.chainA.GetContext(), packet, nil)
+			err = cbs.OnTimeoutPacket(suite.chainA.GetContext(), packet, nil, nil)
 
 			if tc.expPass {
 				suite.Require().NoError(err)

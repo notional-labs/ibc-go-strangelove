@@ -24,6 +24,7 @@ type IBCModule interface {
 		channelCap *capabilitytypes.Capability,
 		counterparty channeltypes.Counterparty,
 		version string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	// OnChanOpenTry will verify the relayer-chosen parameters along with the
@@ -43,6 +44,7 @@ type IBCModule interface {
 		channelCap *capabilitytypes.Capability,
 		counterparty channeltypes.Counterparty,
 		counterpartyVersion string,
+		middlewareData exported.MiddlewareData,
 	) (version string, err error)
 
 	// OnChanOpenAck will error if the counterparty selected version string
@@ -53,6 +55,7 @@ type IBCModule interface {
 		channelID string,
 		counterpartyChannelID string,
 		counterpartyVersion string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	// OnChanOpenConfirm will perform custom CONFIRM logic and may error to abort the handshake.
@@ -60,18 +63,21 @@ type IBCModule interface {
 		ctx sdk.Context,
 		portID,
 		channelID string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnChanCloseInit(
 		ctx sdk.Context,
 		portID,
 		channelID string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnChanCloseConfirm(
 		ctx sdk.Context,
 		portID,
 		channelID string,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	// OnRecvPacket must return an acknowledgement that implements the Acknowledgement interface.
@@ -83,6 +89,7 @@ type IBCModule interface {
 		ctx sdk.Context,
 		packet channeltypes.Packet,
 		relayer sdk.AccAddress,
+		middlewareData exported.MiddlewareData,
 	) exported.Acknowledgement
 
 	OnAcknowledgementPacket(
@@ -90,12 +97,14 @@ type IBCModule interface {
 		packet channeltypes.Packet,
 		acknowledgement []byte,
 		relayer sdk.AccAddress,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	OnTimeoutPacket(
 		ctx sdk.Context,
 		packet channeltypes.Packet,
 		relayer sdk.AccAddress,
+		middlewareData exported.MiddlewareData,
 	) error
 }
 
@@ -105,6 +114,7 @@ type ICS4Wrapper interface {
 		ctx sdk.Context,
 		chanCap *capabilitytypes.Capability,
 		packet exported.PacketI,
+		middlewareData exported.MiddlewareData,
 	) error
 
 	WriteAcknowledgement(
@@ -112,6 +122,7 @@ type ICS4Wrapper interface {
 		chanCap *capabilitytypes.Capability,
 		packet exported.PacketI,
 		ack exported.Acknowledgement,
+		middlewareData exported.MiddlewareData,
 	) error
 }
 

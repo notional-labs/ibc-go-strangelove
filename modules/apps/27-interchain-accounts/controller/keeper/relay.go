@@ -67,7 +67,7 @@ func (k Keeper) createOutgoingPacket(
 		timeoutTimestamp,
 	)
 
-	if err := k.ics4Wrapper.SendPacket(ctx, chanCap, packet); err != nil {
+	if err := k.ics4Wrapper.SendPacket(ctx, chanCap, packet, nil); err != nil {
 		return 0, err
 	}
 

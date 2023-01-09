@@ -364,7 +364,7 @@ func (endpoint *Endpoint) SendPacket(packet exported.PacketI) error {
 	channelCap := endpoint.Chain.GetChannelCapability(packet.GetSourcePort(), packet.GetSourceChannel())
 
 	// no need to send message, acting as a module
-	err := endpoint.Chain.App.GetIBCKeeper().ChannelKeeper.SendPacket(endpoint.Chain.GetContext(), channelCap, packet)
+	err := endpoint.Chain.App.GetIBCKeeper().ChannelKeeper.SendPacket(endpoint.Chain.GetContext(), channelCap, packet, nil)
 	if err != nil {
 		return err
 	}
@@ -414,7 +414,7 @@ func (endpoint *Endpoint) WriteAcknowledgement(ack exported.Acknowledgement, pac
 	channelCap := endpoint.Chain.GetChannelCapability(packet.GetDestPort(), packet.GetDestChannel())
 
 	// no need to send message, acting as a handler
-	err := endpoint.Chain.App.GetIBCKeeper().ChannelKeeper.WriteAcknowledgement(endpoint.Chain.GetContext(), channelCap, packet, ack)
+	err := endpoint.Chain.App.GetIBCKeeper().ChannelKeeper.WriteAcknowledgement(endpoint.Chain.GetContext(), channelCap, packet, ack, nil)
 	if err != nil {
 		return err
 	}

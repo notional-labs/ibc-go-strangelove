@@ -42,6 +42,7 @@ func (im IBCModule) OnChanOpenInit(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	version string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
@@ -53,7 +54,7 @@ func (im IBCModule) OnChanOpenInit(
 
 	// call underlying app's OnChanOpenInit callback with the appVersion
 	return im.app.OnChanOpenInit(ctx, order, connectionHops, portID, channelID,
-		chanCap, counterparty, version)
+		chanCap, counterparty, version, middlewareData)
 }
 
 // OnChanOpenTry implements the IBCModule interface
@@ -66,6 +67,7 @@ func (im IBCModule) OnChanOpenTry(
 	chanCap *capabilitytypes.Capability,
 	counterparty channeltypes.Counterparty,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) (string, error) {
 	return "", sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "channel handshake must be initiated by controller chain")
 }
@@ -82,6 +84,7 @@ func (im IBCModule) OnChanOpenAck(
 	channelID string,
 	counterpartyChannelID string,
 	counterpartyVersion string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
@@ -92,7 +95,7 @@ func (im IBCModule) OnChanOpenAck(
 	}
 
 	// call underlying app's OnChanOpenAck callback with the counterparty app version.
-	return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion)
+	return im.app.OnChanOpenAck(ctx, portID, channelID, counterpartyChannelID, counterpartyVersion, middlewareData)
 }
 
 // OnChanOpenAck implements the IBCModule interface
@@ -100,6 +103,7 @@ func (im IBCModule) OnChanOpenConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return sdkerrors.Wrap(icatypes.ErrInvalidChannelFlow, "channel handshake must be initiated by controller chain")
 }
@@ -109,6 +113,7 @@ func (im IBCModule) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	// Disallow user-initiated channel closing for interchain account channels
 	return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "user cannot close channel")
@@ -119,6 +124,7 @@ func (im IBCModule) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,
 	channelID string,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	return im.keeper.OnChanCloseConfirm(ctx, portID, channelID)
 }
@@ -128,6 +134,7 @@ func (im IBCModule) OnRecvPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	_ sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) ibcexported.Acknowledgement {
 	return channeltypes.NewErrorAcknowledgement("cannot receive packet on controller chain")
 }
@@ -138,13 +145,14 @@ func (im IBCModule) OnAcknowledgementPacket(
 	packet channeltypes.Packet,
 	acknowledgement []byte,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
 	}
 
 	// call underlying app's OnAcknowledgementPacket callback.
-	return im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer)
+	return im.app.OnAcknowledgementPacket(ctx, packet, acknowledgement, relayer, middlewareData)
 }
 
 // OnTimeoutPacket implements the IBCModule interface
@@ -152,6 +160,7 @@ func (im IBCModule) OnTimeoutPacket(
 	ctx sdk.Context,
 	packet channeltypes.Packet,
 	relayer sdk.AccAddress,
+	middlewareData ibcexported.MiddlewareData,
 ) error {
 	if !im.keeper.IsControllerEnabled(ctx) {
 		return types.ErrControllerSubModuleDisabled
@@ -161,5 +170,5 @@ func (im IBCModule) OnTimeoutPacket(
 		return err
 	}
 
-	return im.app.OnTimeoutPacket(ctx, packet, relayer)
+	return im.app.OnTimeoutPacket(ctx, packet, relayer, middlewareData)
 }
