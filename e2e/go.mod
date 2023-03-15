@@ -12,7 +12,7 @@ require (
 	github.com/gogo/protobuf v1.3.3
 	github.com/strangelove-ventures/ibctest/v6 v6.0.0-20221005154709-b642157674bc
 	github.com/stretchr/testify v1.8.1
-	github.com/tendermint/tendermint v0.34.23
+	// github.com/tendermint/tendermint v0.34.23
 	go.uber.org/zap v1.23.0
 	golang.org/x/mod v0.6.0
 	google.golang.org/grpc v1.51.0

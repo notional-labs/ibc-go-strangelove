@@ -80,7 +80,7 @@ func (r clientStateCallResponse) Error() string {
 }
 
 // Calls vm.Init with appropriate arguments
-func initContract(codeID []byte, ctx sdk.Context, store sdk.KVStore) (*types.Response, error) {
+func initContract(codeID []byte, ctx sdk.Context, store cosmwasm.KVStore) (*types.Response, error) {
 	gasMeter := ctx.GasMeter()
 	chainID := ctx.BlockHeader().ChainID
 	height := ctx.BlockHeader().Height

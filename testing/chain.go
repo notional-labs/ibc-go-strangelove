@@ -5,6 +5,12 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto/tmhash"
+	cometproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cometprotoversion "github.com/cometbft/cometbft/proto/tendermint/version"
+	comettypes "github.com/cometbft/cometbft/types"
+	cometversion "github.com/cometbft/cometbft/version"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -18,12 +24,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking/testutil"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
-	abci "github.com/cometbft/cometbft/abci/types"
-	"github.com/cometbft/cometbft/crypto/tmhash"
-	cometproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	cometprotoversion "github.com/cometbft/cometbft/proto/tendermint/version"
-	comettypes "github.com/cometbft/cometbft/types"
-	cometversion "github.com/cometbft/cometbft/version"
 
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
@@ -54,7 +54,7 @@ type TestChain struct {
 	Coordinator   *Coordinator
 	App           TestingApp
 	ChainID       string
-	LastHeader    *ibctm.Header  // header for last block height committed
+	LastHeader    *ibctm.Header     // header for last block height committed
 	CurrentHeader cometproto.Header // header for current block height
 	QueryServer   types.QueryServer
 	TxConfig      client.TxConfig
@@ -418,7 +418,7 @@ func (chain *TestChain) ConstructUpdateTMClientHeaderWithTrustedHeight(counterpa
 	}
 	var (
 		cmtTrustedVals *comettypes.ValidatorSet
-		ok            bool
+		ok             bool
 	)
 	// Once we get TrustedHeight from client, we must query the validators from the counterparty chain
 	// If the LatestHeight == LastHeader.Height, then TrustedValidators are current validators
@@ -462,7 +462,7 @@ func (chain *TestChain) CurrentTMClientHeader() *ibctm.Header {
 
 // CreateTMClientHeader creates a TM header to update the TM client. Args are passed in to allow
 // caller flexibility to use params that differ from the chain.
-func (chain *TestChain) CreateTMClientHeader(chainID string, blockHeight int64, trustedHeight clienttypes.Height, timestamp time.Time, tmValSet, nextVals, tmTrustedVals *tmtypes.ValidatorSet, signers map[string]tmtypes.PrivValidator) *ibctm.Header {
+func (chain *TestChain) CreateTMClientHeader(chainID string, blockHeight int64, trustedHeight clienttypes.Height, timestamp time.Time, tmValSet, nextVals, tmTrustedVals *comettypes.ValidatorSet, signers map[string]comettypes.PrivValidator) *ibctm.Header {
 	var (
 		valSet      *cometproto.ValidatorSet
 		trustedVals *cometproto.ValidatorSet
@@ -496,8 +496,8 @@ func (chain *TestChain) CreateTMClientHeader(chainID string, blockHeight int64, 
 	// MakeCommit expects a signer array in the same order as the validator array.
 	// Thus we iterate over the ordered validator set and construct a signer array
 	// from the signer map in the same order.
-	var signerArr []comettypes.PrivValidator   //nolint:prealloc // using prealloc here would be needlessly complex
-	for _, v := range tmValSet.Validators { //nolint:staticcheck // need to check for nil validator set
+	var signerArr []comettypes.PrivValidator //nolint:prealloc // using prealloc here would be needlessly complex
+	for _, v := range tmValSet.Validators {  //nolint:staticcheck // need to check for nil validator set
 		signerArr = append(signerArr, signers[v.Address.String()])
 	}
 

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	tmtypes "github.com/tendermint/tendermint/types"
+	comettypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
@@ -54,7 +54,7 @@ func (h Header) ValidateBasic() error {
 	if h.Header == nil {
 		return sdkerrors.Wrap(clienttypes.ErrInvalidHeader, "tendermint header cannot be nil")
 	}
-	tmSignedHeader, err := tmtypes.SignedHeaderFromProto(h.SignedHeader)
+	tmSignedHeader, err := comettypes.SignedHeaderFromProto(h.SignedHeader)
 	if err != nil {
 		return sdkerrors.Wrap(err, "header is not a tendermint header")
 	}
@@ -71,7 +71,7 @@ func (h Header) ValidateBasic() error {
 	if h.ValidatorSet == nil {
 		return sdkerrors.Wrap(clienttypes.ErrInvalidHeader, "validator set is nil")
 	}
-	tmValset, err := tmtypes.ValidatorSetFromProto(h.ValidatorSet)
+	tmValset, err := comettypes.ValidatorSetFromProto(h.ValidatorSet)
 	if err != nil {
 		return sdkerrors.Wrap(err, "validator set is not tendermint validator set")
 	}

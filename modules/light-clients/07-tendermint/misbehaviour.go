@@ -4,8 +4,8 @@ import (
 	"time"
 
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	tmtypes "github.com/tendermint/tendermint/types"
+	cometproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	comettypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	host "github.com/cosmos/ibc-go/v7/modules/core/24-host"
@@ -88,11 +88,11 @@ func (misbehaviour Misbehaviour) ValidateBasic() error {
 		return sdkerrors.Wrapf(clienttypes.ErrInvalidMisbehaviour, "Header1 height is less than Header2 height (%s < %s)", misbehaviour.Header1.GetHeight(), misbehaviour.Header2.GetHeight())
 	}
 
-	blockID1, err := tmtypes.BlockIDFromProto(&misbehaviour.Header1.SignedHeader.Commit.BlockID)
+	blockID1, err := comettypes.BlockIDFromProto(&misbehaviour.Header1.SignedHeader.Commit.BlockID)
 	if err != nil {
 		return sdkerrors.Wrap(err, "invalid block ID from header 1 in misbehaviour")
 	}
-	blockID2, err := tmtypes.BlockIDFromProto(&misbehaviour.Header2.SignedHeader.Commit.BlockID)
+	blockID2, err := comettypes.BlockIDFromProto(&misbehaviour.Header2.SignedHeader.Commit.BlockID)
 	if err != nil {
 		return sdkerrors.Wrap(err, "invalid block ID from header 2 in misbehaviour")
 	}
@@ -109,12 +109,12 @@ func (misbehaviour Misbehaviour) ValidateBasic() error {
 }
 
 // validCommit checks if the given commit is a valid commit from the passed-in validatorset
-func validCommit(chainID string, blockID tmtypes.BlockID, commit *tmproto.Commit, valSet *tmproto.ValidatorSet) (err error) {
-	tmCommit, err := tmtypes.CommitFromProto(commit)
+func validCommit(chainID string, blockID comettypes.BlockID, commit *cometproto.Commit, valSet *cometproto.ValidatorSet) (err error) {
+	tmCommit, err := comettypes.CommitFromProto(commit)
 	if err != nil {
 		return sdkerrors.Wrap(err, "commit is not tendermint commit type")
 	}
-	tmValset, err := tmtypes.ValidatorSetFromProto(valSet)
+	tmValset, err := comettypes.ValidatorSetFromProto(valSet)
 	if err != nil {
 		return sdkerrors.Wrap(err, "validator set is not tendermint validator set type")
 	}

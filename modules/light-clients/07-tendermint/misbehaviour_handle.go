@@ -8,7 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	tmtypes "github.com/tendermint/tendermint/types"
+	comettypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v7/modules/core/exported"
@@ -71,12 +71,12 @@ func (cs *ClientState) verifyMisbehaviour(ctx sdk.Context, clientStore sdk.KVSto
 	// if heights are equal check that this is valid misbehaviour of a fork
 	// otherwise if heights are unequal check that this is valid misbehavior of BFT time violation
 	if misbehaviour.Header1.GetHeight().EQ(misbehaviour.Header2.GetHeight()) {
-		blockID1, err := tmtypes.BlockIDFromProto(&misbehaviour.Header1.SignedHeader.Commit.BlockID)
+		blockID1, err := comettypes.BlockIDFromProto(&misbehaviour.Header1.SignedHeader.Commit.BlockID)
 		if err != nil {
 			return sdkerrors.Wrap(err, "invalid block ID from header 1 in misbehaviour")
 		}
 
-		blockID2, err := tmtypes.BlockIDFromProto(&misbehaviour.Header2.SignedHeader.Commit.BlockID)
+		blockID2, err := comettypes.BlockIDFromProto(&misbehaviour.Header2.SignedHeader.Commit.BlockID)
 		if err != nil {
 			return sdkerrors.Wrap(err, "invalid block ID from header 2 in misbehaviour")
 		}
@@ -129,12 +129,12 @@ func (cs *ClientState) verifyMisbehaviour(ctx sdk.Context, clientStore sdk.KVSto
 func checkMisbehaviourHeader(
 	clientState *ClientState, consState *ConsensusState, header *Header, currentTimestamp time.Time,
 ) error {
-	tmTrustedValset, err := tmtypes.ValidatorSetFromProto(header.TrustedValidators)
+	tmTrustedValset, err := comettypes.ValidatorSetFromProto(header.TrustedValidators)
 	if err != nil {
 		return sdkerrors.Wrap(err, "trusted validator set is not tendermint validator set type")
 	}
 
-	tmCommit, err := tmtypes.CommitFromProto(header.Commit)
+	tmCommit, err := comettypes.CommitFromProto(header.Commit)
 	if err != nil {
 		return sdkerrors.Wrap(err, "commit is not tendermint commit type")
 	}

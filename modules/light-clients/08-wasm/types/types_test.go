@@ -20,11 +20,11 @@ import (
 	ibctesting "github.com/cosmos/ibc-go/v7/testing"
 	"github.com/cosmos/ibc-go/v7/testing/simapp"
 	"github.com/stretchr/testify/suite"
-	tmjson "github.com/tendermint/tendermint/libs/json"
-	"github.com/tendermint/tendermint/libs/log"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	tmtypes "github.com/tendermint/tendermint/types"
-	dbm "github.com/tendermint/tm-db"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
+	"github.com/cometbft/cometbft/libs/log"
+	cometproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	comettypes "github.com/cometbft/cometbft/types"
+	dbm "github.com/cometbft/cometbft-db"
 )
 
 type WasmTestSuite struct {
@@ -54,9 +54,9 @@ func SetupTestingWithChannel() (ibctesting.TestingApp, map[string]json.RawMessag
 		panic(err)
 	}
 
-	var genesis tmtypes.GenesisDoc
+	var genesis comettypes.GenesisDoc
 	// NOTE: Tendermint uses a custom JSON decoder for GenesisDoc
-	err = tmjson.Unmarshal(bytes, &genesis)
+	err = cmtjson.Unmarshal(bytes, &genesis)
 	if err != nil {
 		panic(err)
 	}
@@ -103,7 +103,7 @@ func (suite *WasmTestSuite) SetupTest() {
 	err = json.Unmarshal(createClientData, &suite.testData)
 	suite.Require().NoError(err)
 	
-	suite.ctx = suite.chainA.App.GetBaseApp().NewContext(checkTx, tmproto.Header{Height: 1, Time: suite.now}).WithGasMeter(sdk.NewInfiniteGasMeter())
+	suite.ctx = suite.chainA.App.GetBaseApp().NewContext(checkTx, cometproto.Header{Height: 1, Time: suite.now}).WithGasMeter(sdk.NewInfiniteGasMeter())
 	suite.store = suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "08-wasm-0")
 
 	os.MkdirAll("tmp", 0o755)
