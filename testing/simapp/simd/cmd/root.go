@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	sdkcmd "cosmossdk.io/simapp/simd/cmd"
 	rosettaCmd "cosmossdk.io/tools/rosetta/cmd"
 	dbm "github.com/cometbft/cometbft-db"
 	cometcfg "github.com/cometbft/cometbft/config"
