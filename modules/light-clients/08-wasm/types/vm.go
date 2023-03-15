@@ -152,7 +152,7 @@ func callContractWithEnvAndMeter(codeID cosmwasm.Checksum, ctx sdk.Context, stor
 	// mockFailureAPI := *api.NewMockFailureAPI()
 	// mockQuerier := api.MockQuerier{}
 	desercost := types.UFraction{Numerator: 1, Denominator: 1}
-	resp, gasUsed, err := WasmVM.Execute(codeID, env, msgInfo, msg, store, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
+	resp, gasUsed, err := WasmVM.Execute(codeID, env, msgInfo, msg, store.(cosmwasm.KVStore), cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
 	if &ctx != nil {
 		consumeGas(ctx, gasUsed)
 	}
@@ -168,7 +168,7 @@ func queryContractWithStore(codeID cosmwasm.Checksum, store sdk.KVStore, msg []b
 	// mockQuerier := api.MockQuerier{}
 	// TODO: figure out what this is for
 	desercost := types.UFraction{Numerator: 1, Denominator: 1}
-	resp, _, err := WasmVM.Query(codeID, types.Env{}, msg, store, cosmwasm.GoAPI{}, nil, nil, maxGasLimit, desercost)
+	resp, _, err := WasmVM.Query(codeID, types.Env{}, msg, store.(cosmwasm.KVStore), cosmwasm.GoAPI{}, nil, nil, maxGasLimit, desercost)
 	return resp, err
 }
 
