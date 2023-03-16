@@ -81,6 +81,7 @@ func (r clientStateCallResponse) Error() string {
 
 // Calls vm.Init with appropriate arguments
 func initContract(codeID []byte, ctx sdk.Context, store sdk.KVStore) (*types.Response, error) {
+	vmStore := NewStoreAdapter(store)
 	gasMeter := ctx.GasMeter()
 	chainID := ctx.BlockHeader().ChainID
 	height := ctx.BlockHeader().Height
@@ -111,7 +112,7 @@ func initContract(codeID []byte, ctx sdk.Context, store sdk.KVStore) (*types.Res
 	// mockQuerier := api.MockQuerier{}
 
 	desercost := types.UFraction{Numerator: 0, Denominator: 1}
-	response, _, err := WasmVM.Instantiate(codeID, env, msgInfo, []byte("{}"), store, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
+	response, _, err := WasmVM.Instantiate(codeID, env, msgInfo, []byte("{}"), vmStore, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
 	return response, err
 }
 
@@ -144,6 +145,7 @@ func callContract(codeID []byte, ctx sdk.Context, store sdk.KVStore, msg []byte)
 
 // Calls vm.Execute with supplied environment and gas meter
 func callContractWithEnvAndMeter(codeID cosmwasm.Checksum, ctx sdk.Context, store sdk.KVStore, env types.Env, gasMeter sdk.GasMeter, msg []byte) (*types.Response, error) {
+	vmStore := NewStoreAdapter(store)
 	msgInfo := types.MessageInfo{
 		Sender: "",
 		Funds:  nil,
@@ -152,7 +154,7 @@ func callContractWithEnvAndMeter(codeID cosmwasm.Checksum, ctx sdk.Context, stor
 	// mockFailureAPI := *api.NewMockFailureAPI()
 	// mockQuerier := api.MockQuerier{}
 	desercost := types.UFraction{Numerator: 1, Denominator: 1}
-	resp, gasUsed, err := WasmVM.Execute(codeID, env, msgInfo, msg, store.(cosmwasm.KVStore), cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
+	resp, gasUsed, err := WasmVM.Execute(codeID, env, msgInfo, msg, vmStore, cosmwasm.GoAPI{}, nil, gasMeter, gasMeter.Limit(), desercost)
 	if &ctx != nil {
 		consumeGas(ctx, gasUsed)
 	}
@@ -167,8 +169,9 @@ func queryContractWithStore(codeID cosmwasm.Checksum, store sdk.KVStore, msg []b
 	// mockFailureAPI := *api.NewMockFailureAPI()
 	// mockQuerier := api.MockQuerier{}
 	// TODO: figure out what this is for
+	vmStore := NewStoreAdapter(store)
 	desercost := types.UFraction{Numerator: 1, Denominator: 1}
-	resp, _, err := WasmVM.Query(codeID, types.Env{}, msg, store.(cosmwasm.KVStore), cosmwasm.GoAPI{}, nil, nil, maxGasLimit, desercost)
+	resp, _, err := WasmVM.Query(codeID, types.Env{}, msg, vmStore, cosmwasm.GoAPI{}, nil, nil, maxGasLimit, desercost)
 	return resp, err
 }
 
