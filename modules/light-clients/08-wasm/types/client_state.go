@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	cosmwasm "github.com/CosmWasm/wasmvm"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -66,7 +65,7 @@ func (c ClientState) Initialize(context sdk.Context, marshaler codec.BinaryCodec
 	setClientState(store, marshaler, &c)
 	setConsensusState(store, marshaler, consensusState, c.GetLatestHeight())
 
-	_, err := initContract(c.CodeId, context, store.(cosmwasm.KVStore))
+	_, err := initContract(c.CodeId, context, store)
 	if err != nil {
 		return sdkerrors.Wrapf(ErrUnableToInit, fmt.Sprintf("underlying error: %s", err.Error()))
 	}
